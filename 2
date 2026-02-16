@@ -1,0 +1,47 @@
+///Timoshenko Anna, NBIbd-01-24,16.02.2026
+///22. Проанализировать временную сложность алгоритма поиска медианы массива
+#include <iostream>
+#include <vector>
+#include <algorithm>
+
+using namespace std;
+
+double findMedian(vector<double> arr) {
+    sort(arr.begin(), arr.end());
+    int n = arr.size();
+
+    if (n % 2 == 1) {
+        return arr[n / 2];
+    } else {
+        return (arr[n / 2 - 1] + arr[n / 2]) / 2.0;
+    }
+}
+
+int main() {
+    vector<double> numbers;
+    double num;
+
+    cout << "Вводите числа по одному. Для завершения введите -999." << endl;
+
+    while (true) {
+        cout << "Число (или -999 для завершения): ";
+        cin >> num;
+
+        if (num == -999) {
+            break;
+        }
+
+        numbers.push_back(num);
+    }
+
+    // Проверяем, что массив не пустой
+    if (numbers.empty()) {
+        cout << "Массив пуст, медиану вычислить нельзя." << endl;
+        return 1;
+    }
+
+    double median = findMedian(numbers);
+    cout << "Медиана: " << median << endl;
+
+    return 0;
+}
