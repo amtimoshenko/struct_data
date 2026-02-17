@@ -1,0 +1,93 @@
+//Timoshenko Anna, NBIbd-01-24,16.02.2026
+//5. Проанализировать временную сложность алгоритма поиска минимального элемента
+#include <iostream>
+#include <vector>
+#include <chrono>
+
+using namespace std;
+
+double findMinEl1(vector<double> arr1) {
+    double min1=arr1[0];
+    for(int i=0;i<arr1.size();i++){
+        if(arr1[i]<min1){
+            min1=arr1[i];
+        }
+    }
+   return min1;
+}
+
+double findMinEl2(vector<double> arr2) {
+    double min2=arr2[0];
+    for(int i=0;i<arr2.size();i++){
+        if(arr2[i]<min2){
+            min2=arr2[i];
+        }
+    }
+   return min2;
+}
+
+double findMinEl3(vector<double> arr3) {
+    double min3=arr3[0];
+    for(int i=0;i<arr3.size();i++){
+        if(arr3[i]<min3){
+            min3=arr3[i];
+        }
+    }
+   return min3;
+}
+
+int main() {
+    vector<double> numbers;
+    double num;
+  
+    double arr1[5]={1,2,3,4,-1};
+    double arr2[15]={1,1,1,1,1,1,1,1,1,1,1,1,1,1,-1};
+    double arr3[30]={1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,-1};
+    //cout << "Вводите числа по одному. Для завершения введите -999." << endl;
+
+   // while (true) {
+      //  cout << "Число (или -999 для завершения): ";
+//cin >> num;
+
+      //  if (num == -999) {
+           // break;
+       // }
+
+      //  numbers.push_back(num);
+ //   }
+
+    // Проверяем, что массив не пустой
+    //if (numbers.empty()) {
+      //  cout << "Массив пуст, минимальный элемент вычислить нельзя." << endl;
+      //  return 1;
+   // }
+    auto startTime=chrono::high_resolution_clock::now();
+    double min1 = findMinEl1(numbers);
+    auto endTime=chrono::high_resolution_clock::now();
+    auto duration=chrono::duration_cast<chrono::microseconds>(endTime-startTime);
+    
+
+    cout << "Минимальный элемент1: " << min1 << endl;
+    cout<<"Время выполнения(5):" << duration.count() << endl;
+    
+    //auto startTime=chrono::high_resolution_clock::now();
+   // double min2 = findMinEl2(numbers);
+    //auto endTime=chrono::high_resolution_clock::now();
+    //auto duration=chrono::duration_cast<chrono::microseconds>(endTime-startTime);
+    
+
+    //cout << "Минимальный элемент2: " << min2 << endl;
+    //cout<<"Время выполнения(15):" << duration.count() << endl;
+    
+   // auto startTime=chrono::high_resolution_clock::now();
+   // double min3 = findMinEl3(numbers);
+   // auto endTime=chrono::high_resolution_clock::now();
+   // auto duration=chrono::duration_cast<chrono::microseconds>(endTime-startTime);
+    
+
+   // cout << "Минимальный элемент3: " << min1 << endl;
+   // cout<<"Время выполнения(30):" << duration.count() << endl;
+    
+
+    return 0;
+}
