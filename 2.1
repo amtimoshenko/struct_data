@@ -3,91 +3,53 @@
 #include <iostream>
 #include <vector>
 #include <chrono>
+#include <algorithm>
 
 using namespace std;
+using namespace std::chrono;
 
-double findMinEl1(vector<double> arr1) {
-    double min1=arr1[0];
-    for(int i=0;i<arr1.size();i++){
-        if(arr1[i]<min1){
-            min1=arr1[i];
+int findMin(const vector<int>& arr) {
+    int minVal = arr[0];  
+
+    for (size_t i = 1; i < arr.size(); ++i) {
+        if (arr[i] < minVal) {
+            minVal = arr[i];
         }
     }
-   return min1;
-}
 
-double findMinEl2(vector<double> arr2) {
-    double min2=arr2[0];
-    for(int i=0;i<arr2.size();i++){
-        if(arr2[i]<min2){
-            min2=arr2[i];
-        }
-    }
-   return min2;
-}
-
-double findMinEl3(vector<double> arr3) {
-    double min3=arr3[0];
-    for(int i=0;i<arr3.size();i++){
-        if(arr3[i]<min3){
-            min3=arr3[i];
-        }
-    }
-   return min3;
+    return minVal;
 }
 
 int main() {
-    vector<double> numbers;
-    double num;
-  
-    double arr1[5]={1,2,3,4,-1};
-    double arr2[15]={1,1,1,1,1,1,1,1,1,1,1,1,1,1,-1};
-    double arr3[30]={1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,-1};
-    //cout << "Вводите числа по одному. Для завершения введите -999." << endl;
+    const int sizes[] = {5, 500, 5000};
+    const int numArrays = 3;
 
-   // while (true) {
-      //  cout << "Число (или -999 для завершения): ";
-//cin >> num;
+    cout << "Анализ временной сложности поиска минимального элемента\n";
+    cout << "Минимальный элемент всегда стоит последним в массиве\n\n";
 
-      //  if (num == -999) {
-           // break;
-       // }
+    for (int idx = 0; idx < numArrays; ++idx) {
+        int n = sizes[idx];
 
-      //  numbers.push_back(num);
- //   }
+        vector<int> arr(n);
 
-    // Проверяем, что массив не пустой
-    //if (numbers.empty()) {
-      //  cout << "Массив пуст, минимальный элемент вычислить нельзя." << endl;
-      //  return 1;
-   // }
-    auto startTime=chrono::high_resolution_clock::now();
-    double min1 = findMinEl1(numbers);
-    auto endTime=chrono::high_resolution_clock::now();
-    auto duration=chrono::duration_cast<chrono::microseconds>(endTime-startTime);
-    
+        // Заполняем массив: все элементы = n, последний = 1 (минимальный)
+        for (int i = 0; i < n - 1; ++i) {
+            arr[i] = n;  
+        }
+        arr[n - 1] = 1;  
 
-    cout << "Минимальный элемент1: " << min1 << endl;
-    cout<<"Время выполнения(5):" << duration.count() << endl;
-    
-    //auto startTime=chrono::high_resolution_clock::now();
-   // double min2 = findMinEl2(numbers);
-    //auto endTime=chrono::high_resolution_clock::now();
-    //auto duration=chrono::duration_cast<chrono::microseconds>(endTime-startTime);
-    
+        auto start = high_resolution_clock::now();
 
-    //cout << "Минимальный элемент2: " << min2 << endl;
-    //cout<<"Время выполнения(15):" << duration.count() << endl;
-    
-   // auto startTime=chrono::high_resolution_clock::now();
-   // double min3 = findMinEl3(numbers);
-   // auto endTime=chrono::high_resolution_clock::now();
-   // auto duration=chrono::duration_cast<chrono::microseconds>(endTime-startTime);
-    
+        int minElement = findMin(arr);
 
-   // cout << "Минимальный элемент3: " << min1 << endl;
-   // cout<<"Время выполнения(30):" << duration.count() << endl;
-    
+        auto end = high_resolution_clock::now();
+        auto duration = duration_cast<microseconds>(end - start);
+
+        cout << "Массив размером " << n << " элементов:\n";
+        cout << "  Минимальный элемент: " << minElement << "\n";
+        cout << "  Время выполнения: " << duration.count() << " микросекунд\n";
+        cout << "----------------------------------------\n";
+    }
 
     return 0;
 }
