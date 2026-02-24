@@ -1,7 +1,9 @@
 //Тимошенко Анна, НБИбд01-24, 22.02.2026
-// Дана функция T(n) = 50n + 2000. Определить её асимптотический класс сложности. Написать программу для вычисления T(n) при заданном n и вывода итогового класса.
+// 13. Дана функция T(n) = 50n + 2000. Определить её асимптотический класс сложности. Написать программу для вычисления T(n) при заданном n и вывода итогового класса.
 #include <iostream>
+#include <chrono>
 using namespace std;
+using namespace std::chrono;
 
 int main() {
     int n;
@@ -9,11 +11,15 @@ int main() {
     cout << "Введите n: ";
     cin >> n;
 
+    auto start = high_resolution_clock::now();
     int T_n = 50 * n + 2000;
 
     cout << "T(" << n << ") = " << T_n << endl;
 
     cout << "Асимптотический класс: O(n) линейное" << endl;
+    auto end = high_resolution_clock::now();
+    auto duration = duration_cast<microseconds>(end - start);
+    cout << "  Время выполнения: " << duration.count() << " микросекунд\n";
 
     return 0;
 }
