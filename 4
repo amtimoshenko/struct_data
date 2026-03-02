@@ -1,0 +1,74 @@
+//Тимошенко Анна, НБИ01-24, 02.03.2026
+//Реализовать алгоритм быстрого возведения в степень: a^n = (a^(n/2))² при чётном n; a^n = a·a^(n−1) при нечётном n.
+//Определить временную сложность O(log n). Сравнить число умножений с наивным алгоритмом O(n) при n = 16.
+#include <iostream>
+using namespace std;
+
+// Функция быстрого возведения в степень
+long long fast_pow(long long a, int n, int &count) {
+    // Если степень 0, результат всегда 1
+    if (n == 0) {
+        return 1;
+    }
+    // Если степень 1, результат — само число
+    if (n == 1) {
+        return a;
+    }
+
+    // Если n чётное: a^n = (a^(n/2))²
+    if (n % 2 == 0) {
+        long long temp = fast_pow(a, n / 2, count);  // Считаем a^(n/2)
+        count++;  // Считаем одно умножение: temp * temp
+        return temp * temp;
+    } else {
+        // Если n нечётное: a^n = a * a^(n-1)
+        count++;  // Считаем одно умножение: a * результат
+        return a * fast_pow(a, n - 1, count);
+    }
+}
+
+// Простая функция — просто умножаем a на себя n раз
+long long simple_pow(long long a, int n, int &count) {
+    long long res = 1;  // Начинаем с 1 (потому что умножение)
+
+    for (int i = 0; i < n; i++) {
+        res = res * a;  // Умножаем на a
+        count++;        // Считаем каждое умножение
+    }
+
+    return res;
+}
+
+int main() {
+    long long a;      // Основание степени
+    int n = 16;     // Степень (по условию задачи)
+    int fast_count = 0;    // Счётчик умножений для быстрого способа
+    int simple_count = 0;  // Счётчик для простого способа
+
+    cout << "Привет! Давай посчитаем a^16 двумя способами.\n";
+    cout << "Введи число a: ";
+    cin >> a;
+
+    // Считаем быстрым способом
+    long long fast_result = fast_pow(a, n, fast_count);
+
+    // Считаем простым способом
+    long long simple_result = simple_pow(a, n, simple_count);
+
+    // Выводим результаты
+    cout << "\n--- РЕЗУЛЬТАТЫ ---\n";
+    cout << "Число: " << a << ", степень: " << n << "\n";
+    cout << "Быстрый способ: " << fast_result << " (умножений: " << fast_count << ")\n";
+    cout << "Простой способ: " << simple_result << " (умножений: " << simple_count << ")\n";
+
+    // Сравниваем, какой способ лучше
+    cout << "\nСРАВНЕНИЕ:\n";
+    cout << "Быстрый способ сделал на " << (simple_count - fast_count)
+         << " умножений меньше!\n";
+    cout << "Это в " << (double)simple_count / fast_count
+         << " раз быстрее!\n";
+
+    cout << "\nКонец программы. Пока!\n";
+
+    return 0;
+}
