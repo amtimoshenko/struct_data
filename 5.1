@@ -1,0 +1,142 @@
+#include <iostream>
+#include <cmath>
+#include <ctime>
+#include <random>
+using namespace std;
+
+// Counting Sort
+void countingSort(int arr[], int n, int k) {
+    int count[k + 1] = {0};
+    int output[n];
+
+    // Подсчёт частот
+    for (int i = 0; i < n; i++) {
+        count[arr[i]]++;
+    }
+
+    // Префиксные суммы
+    for (int i = 1; i <= k; i++) {
+        count[i] += count[i - 1];
+    }
+
+    // Заполнение выходного массива (с конца для стабильности)
+    for (int i = n - 1; i >= 0; i--) {
+        output[count[arr[i]] - 1] = arr[i];
+        count[arr[i]]--;
+    }
+
+    // Копируем результат обратно
+    for (int i = 0; i < n; i++) {
+        arr[i] = output[i];
+    }
+}
+
+// Merge Sort — вспомогательные функции
+void merge(int arr[], int left, int mid, int right) {
+    int n1 = mid - left + 1;
+    int n2 = right - mid;
+
+    int L[n1], R[n2];
+
+    for (int i = 0; i < n1; i++)
+        L[i] = arr[left + i];
+    for (int j = 0; j < n2; j++)
+        R[j] = arr[mid + 1 + j];
+
+    int i = 0, j = 0, k = left;
+    while (i < n1 && j < n2) {
+        if (L[i] <= R[j]) {
+            arr[k] = L[i];
+            i++;
+        } else {
+            arr[k] = R[j];
+            j++;
+        }
+        k++;
+    }
+
+    while (i < n1) {
+        arr[k] = L[i];
+        i++;
+        k++;
+    }
+
+    while (j < n2) {
+        arr[k] = R[j];
+        j++;
+        k++;
+    }
+}
+
+void mergeSort(int arr[], int left, int right) {
+    if (left < right) {
+        int mid = left + (right - left) / 2;
+        mergeSort(arr, left, mid);
+        mergeSort(arr, mid + 1, right);
+        merge(arr, left, mid, right);
+    }
+}
+
+// Функция для генерации массива случайных чисел в диапазоне [0, k]
+void generateArray(int arr[], int n, int k) {
+    srand(time(NULL));
+    for (int i = 0; i < n; i++) {
+        arr[i] = rand() % (k + 1);
+    }
+}
+
+int main() {
+    const int n = 1000;
+    int k_values[] = {10, 10000};
+
+    cout << "СРАВНЕНИЕ ВРЕМЕНИ ВЫПОЛНЕНИЯ СОРТИРОВОК\n";
+    cout << "====================================\n\n";
+
+    for (int case_num = 0; case_num < 2; case_num++) {
+        int k = k_values[case_num];
+        cout << "СЛУЧАЙ " << (case_num + 1) << ": n = " << n << ", k = " << k << "\n";
+        cout << "--------------------------------\n";
+
+        // Создаём массивы для сортировки
+        int arr1[n], arr2[n];
+
+        // Генерируем одинаковые данные для обоих алгоритмов
+        generateArray(arr1, n, k);
+        for (int i = 0; i < n; i++) {
+            arr2[i] = arr1[i];
+        }
+
+        // Замер времени для Counting Sort
+        clock_t start = clock();
+        countingSort(arr1, n, k);
+        clock_t end = clock();
+        double time_counting = double(end - start) / CLOCKS_PER_SEC;
+
+        // Замер времени для Merge Sort
+        start = clock();
+        mergeSort(arr2, 0, n - 1);
+        end = clock();
+        double time_merge = double(end - start) / CLOCKS_PER_SEC;
+
+        // Вывод результатов
+        cout << "Counting Sort:\n";
+        cout << "  Время выполнения: " << time_counting << " сек\n";
+        cout << "  Теоретическая сложность: O(n + k) = O(" << n << " + " << k << ") = O(" << (n + k) << ")\n\n";
+
+        cout << "Merge Sort:\n";
+        cout << "  Время выполнения: " << time_merge << " сек\n";
+        int log_n = static_cast<int>(ceil(log2(n)));
+        cout << "  Теоретическая сложность: O(n log n) ≈ O(" << n << " × " << log_n << ") = O(" << (n * log_n) << ")\n\n";
+
+        // Сравнение
+        cout << "СРАВНЕНИЕ:\n";
+        if (time_counting < time_merge) {
+            cout << "  Counting Sort быстрее на " << ((time_merge - time_counting) / time_merge * 100) << "%\n";
+        } else {
+            cout << "  Merge Sort быстрее на " << ((time_counting - time_merge) / time_counting * 100) << "%\n";
+        }
+        cout << endl;
+    }
+
+    return 0;
+}
