@@ -1,0 +1,155 @@
+//Тимошенко Анна, НБИ01-24, 16.03.2026
+//Дано соотношение T(n) = 8·T(n/2) + O(n²). Применить Master Theorem: a=8, b=2, log₂8=3 > 2. Случай 1: T(n) = O(n³). 
+//Это рекуррентность стандартного умножения матриц n×n. Реализовать и сравнить с алгоритмом Штрассена O(n^2.81).
+#include <iostream>
+#include <vector>
+#include <ctime>
+#include <cmath>
+using namespace std;
+
+// Функция для стандартного умножения матриц O(n^3)
+vector<vector<int>> standardMultiply(const vector<vector<int>>& A, const vector<vector<int>>& B) {
+    int n = A.size();
+    vector<vector<int>> C(n, vector<int>(n, 0));
+
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            for (int k = 0; k < n; k++) {
+                C[i][j] += A[i][k] * B[k][j];
+            }
+        }
+    }
+    return C;
+}
+
+// Вспомогательные функции для алгоритма Штрассена
+vector<vector<int>> addMatrices(const vector<vector<int>>& A, const vector<vector<int>>& B) {
+    int n = A.size();
+    vector<vector<int>> result(n, vector<int>(n));
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            result[i][j] = A[i][j] + B[i][j];
+        }
+    }
+    return result;
+}
+
+vector<vector<int>> subtractMatrices(const vector<vector<int>>& A, const vector<vector<int>>& B) {
+    int n = A.size();
+    vector<vector<int>> result(n, vector<int>(n));
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            result[i][j] = A[i][j] - B[i][j];
+        }
+    }
+    return result;
+}
+
+// Алгоритм Штрассена (рекурсивный)
+vector<vector<int>> strassenMultiply(const vector<vector<int>>& A, const vector<vector<int>>& B) {
+    int n = A.size();
+
+    // Базовый случай: если матрица маленькая, используем стандартное умножение
+    if (n <= 64) {
+        return standardMultiply(A, B);
+    }
+
+    // Разбиваем матрицы на 4 части каждая
+    int mid = n / 2;
+    vector<vector<int>> A11(mid, vector<int>(mid)), A12(mid, vector<int>(mid));
+    vector<vector<int>> A21(mid, vector<int>(mid)), A22(mid, vector<int>(mid));
+    vector<vector<int>> B11(mid, vector<int>(mid)), B12(mid, vector<int>(mid));
+    vector<vector<int>> B21(mid, vector<int>(mid)), B22(mid, vector<int>(mid));
+
+    // Заполняем подматрицы
+    for (int i = 0; i < mid; i++) {
+        for (int j = 0; j < mid; j++) {
+            A11[i][j] = A[i][j];
+            A12[i][j] = A[i][j + mid];
+            A21[i][j] = A[i + mid][j];
+            A22[i][j] = A[i + mid][j + mid];
+
+            B11[i][j] = B[i][j];
+            B12[i][j] = B[i][j + mid];
+            B21[i][j] = B[i + mid][j];
+            B22[i][j] = B[i + mid][j + mid];
+        }
+    }
+
+    // Вычисляем 7 произведений по алгоритму Штрассена
+    vector<vector<int>> M1 = strassenMultiply(addMatrices(A11, A22), addMatrices(B11, B22));
+    vector<vector<int>> M2 = strassenMultiply(addMatrices(A21, A22), B11);
+    vector<vector<int>> M3 = strassenMultiply(A11, subtractMatrices(B12, B22));
+    vector<vector<int>> M4 = strassenMultiply(A22, subtractMatrices(B21, B11));
+    vector<vector<int>> M5 = strassenMultiply(addMatrices(A11, A12), B22);
+    vector<vector<int>> M6 = strassenMultiply(subtractMatrices(A21, A11), addMatrices(B11, B12));
+    vector<vector<int>> M7 = strassenMultiply(subtractMatrices(A12, A22), addMatrices(B21, B22));
+
+
+    // Собираем итоговую матрицу из частей
+    vector<vector<int>> C11 = addMatrices(subtractMatrices(addMatrices(M1, M4), M5), M7);
+    vector<vector<int>> C12 = addMatrices(M3, M5);
+    vector<vector<int>> C21 = addMatrices(M2, M4);
+    vector<vector<int>> C22 = addMatrices(subtractMatrices(addMatrices(M1, M3), M2), M6);
+
+    // Объединяем 4 части в одну матрицу
+    vector<vector<int>> C(n, vector<int>(n));
+    for (int i = 0; i < mid; i++) {
+        for (int j = 0; j < mid; j++) {
+            C[i][j] = C11[i][j];
+            C[i][j + mid] = C12[i][j];
+            C[i + mid][j] = C21[i][j];
+            C[i + mid][j + mid] = C22[i][j];
+        }
+    }
+    return C;
+}
+
+// Функция для генерации случайной матрицы
+vector<vector<int>> generateRandomMatrix(int n) {
+    vector<vector<int>> matrix(n, vector<int>(n));
+    for (int i = 0; i < n; i++) {
+        for (int j = 0; j < n; j++) {
+            matrix[i][j] = rand() % 10; // числа от 0 до 9
+        }
+    }
+    return matrix;
+}
+
+int main() {
+    // Инициализация генератора случайных чисел
+    srand(time(NULL));
+
+    // Тестируем для разных размеров матриц
+    vector<int> sizes = {32, 64, 128};
+
+    cout << "СРАВНЕНИЕ АЛГОРИТМОВ УМНОЖЕНИЯ МАТРИЦ\n";
+    cout << "==================================\n\n";
+
+    for (int n : sizes) {
+        cout << "Матрица " << n << "×" << n << ":\n";
+
+        // Генерируем две случайные матрицы
+        vector<vector<int>> A = generateRandomMatrix(n);
+        vector<vector<int>> B = generateRandomMatrix(n);
+
+        // Замер времени для стандартного умножения
+        clock_t start = clock();
+        vector<vector<int>> C1 = standardMultiply(A, B);
+        clock_t end = clock();
+        double timeStandard = double(end - start) / CLOCKS_PER_SEC;
+
+        // Замер времени для алгоритма Штрассена
+        start = clock();
+        vector<vector<int>> C2 = strassenMultiply(A, B);
+        end = clock();
+        double timeStrassen = double(end - start) / CLOCKS_PER_SEC;
+
+        // Вывод результатов
+        cout << "Стандартное умножение: " << timeStandard << " сек\n";
+        cout << "Алгоритм Штрассена:    " << timeStrassen << " сек\n";
+
+        if (timeStandard < timeStrassen) {
+            cout << "Стандартное быстрее на " << ((timeStrassen - timeStandard) / timeStrassen * 100) << "%\n";
+        } else {
+            cout << "Штрассен быстрее на " << ((timeStandard - timeStrassen) / timeStandard * 1
