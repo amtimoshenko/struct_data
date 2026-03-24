@@ -1,0 +1,121 @@
+class TreeNode:
+    def __init__(self, key):
+        self.key = key
+        self.left = None
+        self.right = None
+        self.height = 1  # Высота узла (для балансировки)
+
+
+def get_height(node):
+    if not node:
+        return 0
+    return node.height
+
+
+def get_balance(node):
+    if not node:
+        return 0
+    return get_height(node.left) - get_height(node.right)
+
+
+def left_rotate(z):
+    y = z.right
+    if not y:
+        return z  # Если правого потомка нет — ничего не делаем
+    T2 = y.left
+
+    # Выполняем поворот
+    y.left = z
+    z.right = T2
+
+    # Обновляем высоты
+    z.height = max(get_height(z.left), get_height(z.right)) + 1
+    y.height = max(get_height(y.left), get_height(y.right)) + 1
+
+    return y  # Новый корень после поворота
+
+
+def right_rotate(z):
+    y = z.left
+    if not y:
+        return z  # Если левого потомка нет — ничего не делаем
+    T3 = y.right
+
+    # Выполняем поворот
+    y.right = z
+    z.left = T3
+
+    # Обновляем высоты
+    z.height = max(get_height(z.left), get_height(z.right)) + 1
+    y.height = max(get_height(y.left), get_height(y.right)) + 1
+
+    return y  # Новый корень после поворота
+
+
+def avl_insert(root, key):
+    # 1. Выполняем обычную вставку BST
+    if not root:
+        return TreeNode(key)
+    elif key < root.key:
+        root.left = avl_insert(root.left, key)
+    elif key > root.key:
+        root.right = avl_insert(root.right, key)
+    else:
+        return root  # Дубликаты не вставляем
+
+    # 2. Обновляем высоту текущего узла
+    root.height = 1 + max(get_height(root.left), get_height(root.right))
+
+    # 3. Вычисляем баланс
+    balance = get_balance(root)
+
+    # 4. Балансировка (4 случая)
+
+    # LR-случай (баланс < -1 и ключ > правого потомка)
+    if balance < -1 and key > root.right.key:
+        root.right = left_rotate(root.right)
+        return right_rotate(root)
+
+    # LL-случай (баланс > 1 и ключ < левого потомка)
+    if balance > 1 and key < root.left.key:
+        return right_rotate(root)
+
+    # RR-случай (баланс < -1 и ключ < правого потомка)
+    if balance < -1 and key < root.right.key:
+        return left_rotate(root)
+
+    # RL-случай (баланс > 1 и ключ > левого потомка)
+    if balance > 1 and key > root.left.key:
+        root.left = right_rotate(root.left)
+        return left_rotate(root)
+
+    return root
+
+
+def inorder_traversal(root):
+    res = []
+    if root:
+        res = inorder_traversal(root.left)
+        res.append(root.key)
+        res = res + inorder_traversal(root.right)
+    return res
+
+
+# Создаём пустое дерево
+root = None
+
+# Вставляем ключи и выводим состояние дерева после каждой вставки
+root = avl_insert(root, 30)
+print("После вставки 30:", inorder_traversal(root))
+
+root = avl_insert(root, 10)
+print("После вставки 10:", inorder_traversal(root))
+
+root = avl_insert(root, 20)
+print("После вставки 20 (с LR-поворотом):", inorder_traversal(root))
+
+# Выводим итоговое дерево
+print("\nИтоговое дерево (inorder):", inorder_traversal(root))
+print("Корень:", root.key)
+print("Левый потомок корня:", root.left.key)
+print("Правый потомок корня:", root.right.key)
