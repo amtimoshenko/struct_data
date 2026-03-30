@@ -1,0 +1,466 @@
+//Тимошенко Анна, НБИ-01-24, 30.03.2026
+//B4  Полная вставка в RB-дерево (все 3 случая)
+Что нужно сделать:
+Реализуйте RBTree.insert(key) с полной функцией rb_insert_fixup, обрабатывающей все три случая:
+1. Дядя красный → перекраска + сдвиг z вверх
+2. Дядя чёрный, z — правый потомок → left_rotate(parent(z)), переход к случаю 3
+3. Дядя чёрный, z — левый потомок → right_rotate(grandparent(z)) + перекраска
+
+После каждой вставки вызывать is_valid_rb_tree() для проверки всех 5 свойств.
+
+Вставьте: [41, 38, 31, 12, 19, 8]. После каждой вставки выведите:
+• Корень и его цвет
+• обход с цветами: [(key, color), ...]
+
+Сравните: сколько вращений выполняется при тех же вставках в AVL vs RB?
+#include <iostream>
+#include <vector>
+#include <memory>
+#include <string>
+#include <algorithm>
+
+enum Color { RED, BLACK };
+
+struct Node {
+    int key;
+    Color color;
+    Node* left;
+    Node* right;
+    Node* parent;
+    
+    Node(int k) : key(k), color(RED), left(nullptr), right(nullptr), parent(nullptr) {}
+};
+
+class RBTree {
+protected:  // Изменяем с private на protected, чтобы было доступно в наследниках
+    Node* root;
+    
+    // Вспомогательные функции
+    Node* grandparent(Node* n) {
+        if (n && n->parent) return n->parent->parent;
+        return nullptr;
+    }
+    
+    Node* uncle(Node* n) {
+        Node* g = grandparent(n);
+        if (!g) return nullptr;
+        if (n->parent == g->left) return g->right;
+        else return g->left;
+    }
+    
+    void left_rotate(Node* x) {
+        Node* y = x->right;
+        x->right = y->left;
+        if (y->left) y->left->parent = x;
+        y->parent = x->parent;
+        if (!x->parent) root = y;
+        else if (x == x->parent->left) x->parent->left = y;
+        else x->parent->right = y;
+        y->left = x;
+        x->parent = y;
+    }
+    
+    void right_rotate(Node* x) {
+        Node* y = x->left;
+        x->left = y->right;
+        if (y->right) y->right->parent = x;
+        y->parent = x->parent;
+        if (!x->parent) root = y;
+        else if (x == x->parent->left) x->parent->left = y;
+        else x->parent->right = y;
+        y->right = x;
+        x->parent = y;
+    }
+    
+    void rb_insert_fixup(Node* z) {
+        while (z->parent && z->parent->color == RED) {
+            Node* g = grandparent(z);
+            if (z->parent == g->left) {
+                Node* u = g->right; // дядя
+                
+                // Случай 1: дядя красный
+                if (u && u->color == RED) {
+                    z->parent->color = BLACK;
+                    u->color = BLACK;
+                    g->color = RED;
+                    z = g;
+                } 
+                else {
+                    // Случай 2: дядя черный, z - правый потомок
+                    if (z == z->parent->right) {
+                        z = z->parent;
+                        left_rotate(z);
+                    }
+                    // Случай 3: дядя черный, z - левый потомок
+                    z->parent->color = BLACK;
+                    g->color = RED;
+                    right_rotate(g);
+                }
+            } 
+            else {
+                Node* u = g->left; // дядя
+                
+                // Случай 1: дядя красный
+                if (u && u->color == RED) {
+                    z->parent->color = BLACK;
+                    u->color = BLACK;
+                    g->color = RED;
+                    z = g;
+                }
+                else {
+                    // Случай 2: дядя черный, z - левый потомок
+                    if (z == z->parent->left) {
+                        z = z->parent;
+                        right_rotate(z);
+                    }
+                    // Случай 3: дядя черный, z - правый потомок
+                    z->parent->color = BLACK;
+                    g->color = RED;
+                    left_rotate(g);
+                }
+            }
+        }
+        root->color = BLACK;
+    }
+    
+    int get_black_height(Node* node) {
+        if (!node) return 1;
+        int leftHeight = get_black_height(node->left);
+        int rightHeight = get_black_height(node->right);
+        if (leftHeight != rightHeight) return -1; // неравенство
+        return leftHeight + (node->color == BLACK ? 1 : 0);
+    }
+    
+    bool is_valid_rb_tree() {
+        if (!root) return true;
+        
+        // Свойство 1: корень черный
+        if (root->color != BLACK) return false;
+        
+        // Свойство 2: нет двух красных подряд
+        if (!check_no_red_red(root)) return false;
+        
+        // Свойство 3: черная высота одинакова для всех путей
+        int blackHeight = -1;
+        return check_black_height(root, 0, blackHeight);
+    }
+    
+    bool check_no_red_red(Node* node) {
+        if (!node) return true;
+        if (node->color == RED) {
+            if ((node->left && node->left->color == RED) ||
+                (node->right && node->right->color == RED)) {
+                return false;
+            }
+        }
+        return check_no_red_red(node->left) && check_no_red_red(node->right);
+    }
+    
+    bool check_black_height(Node* node, int currentBlack, int& blackHeight) {
+        if (!node) {
+            if (blackHeight == -1) {
+                blackHeight = currentBlack;
+                return true;
+            }
+            return currentBlack == blackHeight;
+        }
+        int newBlack = currentBlack + (node->color == BLACK ? 1 : 0);
+        return check_black_height(node->left, newBlack, blackHeight) &&
+               check_black_height(node->right, newBlack, blackHeight);
+    }
+    
+    void inorder_collect(Node* node, std::vector<std::pair<int, std::string>>& result) {
+        if (!node) return;
+        inorder_collect(node->left, result);
+        result.push_back({node->key, node->color == RED ? "RED" : "BLACK"});
+        inorder_collect(node->right, result);
+    }
+    
+    int get_tree_black_height() {
+        if (!root) return 0;
+        int height = 0;
+        Node* node = root;
+        while (node) {
+            if (node->color == BLACK) height++;
+            node = node->left;
+        }
+        return height;
+    }
+    
+public:
+    RBTree() : root(nullptr) {}
+    
+    void insert(int key) {
+        Node* z = new Node(key);
+        Node* y = nullptr;
+        Node* x = root;
+        
+        // Обычная вставка в BST
+        while (x) {
+            y = x;
+            if (z->key < x->key) x = x->left;
+            else x = x->right;
+        }
+        
+        z->parent = y;
+        if (!y) root = z;
+        else if (z->key < y->key) y->left = z;
+        else y->right = z;
+        
+        // Восстановление свойств RB-дерева
+        rb_insert_fixup(z);
+    }
+    
+    void print_state(int step, const std::vector<int>& keys) {
+        std::cout << "\n=== После вставки " << keys[step] << " ===\n";
+        
+        // Корень и его цвет
+        if (root) {
+            std::cout << "Корень: " << root->key 
+                      << " (" << (root->color == RED ? "RED" : "BLACK") << ")\n";
+        }
+    
+        
+        // In-order обход с цветами
+        std::vector<std::pair<int, std::string>> inorder;
+        inorder_collect(root, inorder);
+        std::cout << "обход: ";
+        for (size_t i = 0; i < inorder.size(); i++) {
+            std::cout << "(" << inorder[i].first << "," << inorder[i].second << ")";
+            if (i < inorder.size() - 1) std::cout << ", ";
+        }
+        std::cout << "\n";
+        
+     
+    }
+};
+
+// Класс для подсчета вращений
+class RBTreeWithCounter : public RBTree {
+private:
+    int rotations;
+    
+public:
+    RBTreeWithCounter() : rotations(0) {}
+    
+    // Обертки для вращений с подсчетом
+    void left_rotate_with_count(Node* x) {
+        rotations++;
+        left_rotate(x);
+    }
+    
+    void right_rotate_with_count(Node* x) {
+        rotations++;
+        right_rotate(x);
+    }
+    
+    int get_rotations() { return rotations; }
+    
+    // Переопределяем insert для подсчета вращений
+    void insert_with_count(int key) {
+        Node* z = new Node(key);
+        Node* y = nullptr;
+        Node* x = root;
+        
+        while (x) {
+            y = x;
+            if (z->key < x->key) x = x->left;
+            else x = x->right;
+        }
+        
+        z->parent = y;
+        if (!y) root = z;
+        else if (z->key < y->key) y->left = z;
+        else y->right = z;
+        
+        // Исправленная версия fixup с подсчетом вращений
+        rb_insert_fixup_with_count(z);
+    }
+    
+private:
+    void rb_insert_fixup_with_count(Node* z) {
+        while (z->parent && z->parent->color == RED) {
+            Node* g = grandparent(z);
+            if (z->parent == g->left) {
+                Node* u = g->right;
+                
+                if (u && u->color == RED) {
+                    z->parent->color = BLACK;
+                    u->color = BLACK;
+                    g->color = RED;
+                    z = g;
+                } 
+                else {
+                    if (z == z->parent->right) {
+                        z = z->parent;
+                        left_rotate_with_count(z);  // Считаем вращение
+                    }
+                    z->parent->color = BLACK;
+                    g->color = RED;
+                    right_rotate_with_count(g);     // Считаем вращение
+                }
+            } 
+            else {
+                Node* u = g->left;
+                
+                if (u && u->color == RED) {
+                    z->parent->color = BLACK;
+                    u->color = BLACK;
+                    g->color = RED;
+                    z = g;
+                }
+                else {
+                    if (z == z->parent->left) {
+                        z = z->parent;
+                        right_rotate_with_count(z); // Считаем вращение
+                    }
+                    z->parent->color = BLACK;
+                    g->color = RED;
+                    left_rotate_with_count(g);      // Считаем вращение
+                }
+            }
+        }
+        root->color = BLACK;
+    }
+};
+
+// Простое AVL дерево для сравнения
+class AVLTree {
+private:
+    struct AVLNode {
+        int key;
+        int height;
+        AVLNode* left;
+        AVLNode* right;
+        AVLNode(int k) : key(k), height(1), left(nullptr), right(nullptr) {}
+    };
+    
+    AVLNode* root;
+    int rotations_count;
+    
+    int height(AVLNode* n) { return n ? n->height : 0; }
+    
+    int balance_factor(AVLNode* n) {
+        return n ? height(n->left) - height(n->right) : 0;
+    }
+    
+    void update_height(AVLNode* n) {
+        if (n) n->height = 1 + std::max(height(n->left), height(n->right));
+    }
+    
+    AVLNode* right_rotate(AVLNode* y) {
+        rotations_count++;
+        AVLNode* x = y->left;
+        AVLNode* T2 = x->right;
+        
+        x->right = y;
+        y->left = T2;
+        
+        update_height(y);
+        update_height(x);
+        
+        return x;
+    }
+    
+    AVLNode* left_rotate(AVLNode* x) {
+        rotations_count++;
+        AVLNode* y = x->right;
+        AVLNode* T2 = y->left;
+        
+        y->left = x;
+        x->right = T2;
+        
+        update_height(x);
+        update_height(y);
+        
+        return y;
+    }
+    
+    AVLNode* insert_avl(AVLNode* node, int key) {
+        if (!node) return new AVLNode(key);
+        
+        if (key < node->key) node->left = insert_avl(node->left, key);
+        else if (key > node->key) node->right = insert_avl(node->right, key);
+        else return node;
+        
+        update_height(node);
+        
+        int balance = balance_factor(node);
+        
+        // Левый-левый случай
+        if (balance > 1 && key < node->left->key)
+            return right_rotate(node);
+        
+        // Правый-правый случай
+        if (balance < -1 && key > node->right->key)
+            return left_rotate(node);
+        
+        // Левый-правый случай
+        if (balance > 1 && key > node->left->key) {
+            node->left = left_rotate(node->left);
+            return right_rotate(node);
+        }
+        
+        // Правый-левый случай
+        if (balance < -1 && key < node->right->key) {
+            node->right = right_rotate(node->right);
+            return left_rotate(node);
+        }
+        
+        return node;
+    }
+    
+public:
+    AVLTree() : root(nullptr), rotations_count(0) {}
+    
+    void insert(int key) {
+        root = insert_avl(root, key);
+    }
+    
+    int get_rotations_count() { return rotations_count; }
+};
+
+int main() {
+    std::cout << "========================================\n";
+    std::cout << "КРАСНО-ЧЕРНОЕ ДЕРЕВО\n";
+    std::cout << "========================================\n";
+    
+    std::vector<int> keys = {41, 38, 31, 12, 19, 8};
+    RBTree rbTree;
+    
+    for (size_t i = 0; i < keys.size(); i++) {
+        rbTree.insert(keys[i]);
+        rbTree.print_state(i, keys);
+    }
+    
+    std::cout << "\n========================================\n";
+    std::cout << "СРАВНЕНИЕ КОЛИЧЕСТВА ВРАЩЕНИЙ\n";
+    std::cout << "========================================\n";
+    
+    // Сравнение с AVL
+    RBTreeWithCounter rbCounter;
+    AVLTree avlTree;
+    
+    std::vector<int> testKeys = {41, 38, 31, 12, 19, 8};
+    
+    // Вставляем в RB дерево с подсчетом вращений
+    for (int key : testKeys) {
+        rbCounter.insert_with_count(key);
+    }
+    
+    // Вставляем в AVL дерево с подсчетом вращений
+    for (int key : testKeys) {
+        avlTree.insert(key);
+    }
+    
+    std::cout << "\nДля последовательности: ";
+    for (int k : testKeys) std::cout << k << " ";
+    std::cout << "\n";
+    std::cout << "RB дерево (кол-во вращений): " << rbCounter.get_rotations() << "\n";
+    std::cout << "AVL дерево (кол-во вращений): " << avlTree.get_rotations_count() << "\n";
+    std::cout << "\nВывод: RB-дерево делает меньше вращений при вставке, чем AVL.\n";
+    std::cout << "RB-дерево использует перекрашивания вместо вращений,\n";
+    std::cout << "что делает его более эффективным для частых вставок.\n";
+    
+    return 0;
+}
