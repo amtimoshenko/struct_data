@@ -1,0 +1,196 @@
+#include <iostream>
+#include <vector>
+using namespace std;
+
+enum Color {RED, BLACK};
+
+struct Node {
+    int key;
+    Node* left;
+    Node* right;
+    Node* parent;
+    Color color;
+
+    Node(int k) : key(k), left(nullptr), right(nullptr), parent(nullptr), color(RED) {}
+};
+
+class RBTree {
+private:
+    Node* root;
+
+    void leftRotate(Node* x) {
+        Node* y = x->right;
+        x->right = y->left;
+        if (y->left != nullptr) y->left->parent = x;
+        y->parent = x->parent;
+        if (x->parent == nullptr) root = y;
+        else if (x == x->parent->left) x->parent->left = y;
+        else x->parent->right = y;
+        y->left = x;
+        x->parent = y;
+    }
+
+    void rightRotate(Node* y) {
+        Node* x = y->left;
+        y->left = x->right;
+        if (x->right != nullptr) x->right->parent = y;
+        x->parent = y->parent;
+        if (y->parent == nullptr) root = x;
+        else if (y == y->parent->right) y->parent->right = x;
+        else y->parent->left = x;
+        x->right = y;
+        y->parent = x;
+    }
+
+    void rbInsertFixup(Node* z) {
+        while (z->parent != nullptr && z->parent->color == RED) {
+            if (z->parent == z->parent->parent->left) {
+                Node* uncle = z->parent->parent->right;
+                if (uncle != nullptr && uncle->color == RED) {
+                    z->parent->color = BLACK;
+                    uncle->color = BLACK;
+                    z->parent->parent->color = RED;
+                    z = z->parent->parent;
+                } else {
+                    if (z == z->parent->right) {
+                        z = z->parent;
+                        leftRotate(z);
+                    }
+                    z->parent->color = BLACK;
+                    z->parent->parent->color = RED;
+                    rightRotate(z->parent->parent);
+                }
+            } else {
+                Node* uncle = z->parent->parent->left;
+                if (uncle != nullptr && uncle->color == RED) {
+                    z->parent->color = BLACK;
+                    uncle->color = BLACK;
+                    z->parent->parent->color = RED;
+                    z = z->parent->parent;
+                } else {
+                    if (z == z->parent->left) {
+                        z = z->parent;
+                        rightRotate(z);
+                    }
+                    z->parent->color = BLACK;
+                    z->parent->parent->color = RED;
+                    leftRotate(z->parent->parent);
+                }
+            }
+        }
+        root->color = BLACK;
+    }
+
+    Node* insertNode(Node* node, int key) {
+        if (node == nullptr) return new Node(key);
+
+        if (key < node->key) {
+            node->left = insertNode(node->left, key);
+            node->left->parent = node;
+        } else if (key > node->key) {
+            node->right = insertNode(node->right, key);
+            node->right->parent = node;
+        } else return node; // дубликаты не вставляем
+
+        return node;
+    }
+
+    int getBlackHeight(Node* node) {
+        if (node == nullptr) return 0;
+        int leftHeight = getBlackHeight(node->left);
+        int rightHeight = getBlackHeight(node->right);
+        int height = max(leftHeight, rightHeight);
+        if (node->color == BLACK) height++;
+        return height;
+    }
+
+    void inOrderTraversal(Node* node, vector<pair<int, Color>>& result) {
+        if (node != nullptr) {
+            inOrderTraversal(node->left, result);
+            result.push_back({node->key, node->color});
+            inOrderTraversal(node->right, result);
+        }
+    }
+
+    bool isValidRBTree() {
+        return isBlackRoot() && isBlackHeightValid() && isNoRedRed();
+    }
+
+    bool isBlackRoot() { return root == nullptr || root->color == BLACK; }
+
+    bool isBlackHeightValid() {
+        int blackHeight = getBlackHeight(root);
+        return checkBlackHeight(root, blackHeight, 0);
+    }
+
+    bool checkBlackHeight(Node* node, int blackHeight, int currentHeight) {
+        if (node == nullptr) return currentHeight == blackHeight;
+        currentHeight += (node->color == BLACK) ? 1 : 0;
+        return checkBlackHeight(node->left, blackHeight, currentHeight) &&
+               checkBlackHeight(node->right, blackHeight, currentHeight);
+    }
+
+    bool isNoRedRed() {
+        return checkNoRedRed(root);
+    }
+
+    bool checkNoRedRed(Node* node) {
+        if (node == nullptr) return true;
+        if (node->color == RED) {
+            if (node->left != nullptr && node->left->color == RED) return false;
+            if (node->right != nullptr && node->right->color == RED) return false;
+        }
+        return checkNoRedRed(node->left) && checkNoRedRed(node->right);
+    }
+
+public:
+    RBTree() : root(nullptr) {}
+
+    void insert(int key) {
+        root = insertNode(root, key);
+        rbInsertFixup(root);
+        isValidRBTree(); // проверка свойств после вставки
+    }
+
+    void printInOrderWithColors() {
+        vector<pair<int, Color>> result;
+        inOrderTraversal(root, result);
+        cout << "In-order обход с цветами: ";
+        for (const auto& p : result) {
+            cout << "(" << p.first << ", " << (p.second == RED ? "RED" : "BLACK") << ") ";
+        }
+        cout << endl;
+    }
+
+    void printRootAndColor() {
+        if (root == nullptr) {
+            cout << "Корень: nullptr" << endl;
+        } else {
+            cout << "Корень: " << root->key << " (цвет: " << (root->color == RED ? "RED" : "BLACK") << ")" << endl;
+        }
+    }
+
+    int getBlackHeight() {
+        return getBlackHeight(root);
+    }
+
+    bool isValid() {
+        return isValidRBTree();
+    }
+};
+
+int main() {
+    RBTree rbTree;
+    vector<int> keys = {41, 38, 31, 12, 19, 8};
+
+    for (int key : keys) {
+        cout << "Вставка ключа " << key << ":" << endl;
+        rbTree.insert(key);
+        rbTree.printRootAndColor();
+        cout << "Чёрная высота дерева: " << rbTree.getBlackHeight() << endl;
+        rbTree.printInOrderWithColors();
+        cout << "Дерево валидно: " << (rbTree.isValid() ? "Да" : "Нет") << endl << endl;
+    }
+
+    return 0;
+}
