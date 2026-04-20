@@ -1,0 +1,140 @@
+Изучите ключевое слово super на C++
+
+Создайте иерархию: Animal → Dog → GuideDog.
+
+Animal: String name, int age; методы: eat(), sleep(), toString()
+Dog: String breed; методы: bark(), fetch(); переопределите toString()
+GuideDog: String owner; методы: guide(); переопределите toString()
+
+В каждом конструкторе явно вызывайте конструктор родителя (super() / инициализатор базового класса).
+
+Выведите информацию о каждом объекте, вызовите все методы.
+
+Ответьте:
+27. Для чего используется super() / вызов конструктора базового класса?
+28. Что произойдёт, если не вызвать super() в Java, когда у родителя нет конструктора без параметров?
+29. Что такое цепочка конструкторов?
+Ожидаемый результат:
+Animal: Барсик, 5 лет
+eat() → Барсик ест
+sleep() → Барсик спит
+Dog: Рекс (Лабрадор), 3 года
+bark() → Гав!
+fetch() → Рекс приносит мяч
+GuideDog: Дружок (Немецкая овчарка), 4 года, хозяин: Иван
+guide() → Дружок ведёт Ивана
+Цепочка: GuideDog() → Dog() → Animal() – порядок вызова конструкторов.
+Без super() при необходимости: ошибка компиляции.
+#include <iostream>
+#include <string>
+
+using namespace std;
+
+// Базовый класс Animal (Животное)
+class Animal {
+protected:
+    string name;  // Имя животного
+    int age;      // Возраст животного
+
+public:
+    // Конструктор класса Animal с параметрами
+    // Используем список инициализации для прямой инициализации полей
+    Animal(string n, int a) : name(n), age(a) {}
+
+    // Метод eat() — животное ест
+    void eat() {
+        cout << name << " ест" << endl;
+    }
+
+    // Метод sleep() — животное спит
+    void sleep() {
+        cout << name << " спит" << endl;
+    }
+
+    // Виртуальный метод toString() для получения строкового представления объекта
+    // virtual позволяет переопределять метод в производных классах
+    virtual string toString() {
+        return "Animal: " + name + ", " + to_string(age) + " лет";
+    }
+};
+
+// Класс Dog (Собака) наследуется от Animal
+class Dog : public Animal {
+protected:
+    string breed;  // Порода собаки
+
+public:
+    // Конструктор класса Dog с параметрами
+    // : Animal(n, a) — вызов конструктора базового класса Animal
+    // Сначала инициализируется базовый класс, затем поля текущего класса
+    Dog(string n, int a, string b) : Animal(n, a), breed(b) {}
+
+    // Метод bark() — собака лает
+    void bark() {
+        cout << "Гав!" << endl;
+    }
+
+    // Метод fetch() — собака приносит мяч
+    void fetch() {
+        cout << name << " приносит мяч" << endl;
+    }
+
+    // Переопределение метода toString() для класса Dog
+    // override указывает, что метод переопределяет виртуальный метод базового класса
+    string toString() override {
+        return "Dog: " + name + " (" + breed + "), " + to_string(age) + " года";
+    }
+};
+
+// Класс GuideDog (Собака‑поводырь) наследуется от Dog
+class GuideDog : public Dog {
+private:
+    string owner;  // Хозяин собаки‑поводыря
+
+public:
+    // Конструктор класса GuideDog с параметрами
+    // : Dog(n, a, b) — вызов конструктора базового класса Dog
+    // Цепочка вызовов: GuideDog → Dog → Animal
+    GuideDog(string n, int a, string b, string o)
+        : Dog(n, a, b), owner(o) {}
+
+    // Метод guide() — собака ведёт хозяина
+    void guide() {
+        cout << name << " ведёт " << owner << endl;
+    }
+
+    // Переопределение метода toString() для класса GuideDog
+    string toString() override {
+        return "GuideDog: " + name + " (" + breed + "), " +
+               to_string(age) + " года, хозяин: " + owner;
+    }
+};
+
+int main() {
+    // Создаём объект класса Animal
+    Animal animal("Барсик", 5);
+
+    // Создаём объект класса Dog
+    Dog dog("Рекс", 3, "Лабрадор");
+
+    // Создаём объект класса GuideDog
+    GuideDog guideDog("Дружок", 4, "Немецкая овчарка", "Иван");
+
+    // Выводим информацию об объекте Animal и вызываем его методы
+    cout << animal.toString() << endl;
+    animal.eat();
+    animal.sleep();
+
+    // Отделяем вывод для наглядности
+    cout << endl << dog.toString() << endl;
+    // Вызываем методы объекта Dog
+    dog.bark();
+    dog.fetch();
+
+    // Отделяем вывод для наглядности
+    cout << endl << guideDog.toString() << endl;
+    // Вызываем метод объекта GuideDog
+    guideDog.guide();
+
+    return 0;
+}
