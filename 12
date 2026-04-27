@@ -1,0 +1,276 @@
+21. Тимошенко Анна
+Реализуйте паттерн CQRS (Command Query Responsibility Segregation) на Java.
+
+Разделите операции на:
+- Commands (изменяют состояние): CreateProductCommand, UpdatePriceCommand, DeleteProductCommand
+- Queries (не изменяют состояние): GetProductQuery, GetProductsByCategoryQuery, GetStatisticsQuery
+
+CommandBus: принимает Command → CommandHandler.handle()
+QueryBus: принимает Query → QueryHandler.handle() → возвращает результат
+
+Хранилища: WriteStore (для команд) и ReadStore (для запросов, денормализованная модель).
+
+Синхронизация: при выполнении команды – публикуется Event → ReadStore обновляется.
+
+Ответьте:
+44. Зачем разделять команды и запросы в архитектуре?
+45. Как CQRS связан с Event Sourcing?
+Ограничения:
+ReadStore и WriteStore – разные структуры данных (WriteStore – список Product, ReadStore – Map для быстрого поиска + предрассчитанная статистика). Синхронизация через EventBus из задачи B5.
+Ожидаемый результат:
+CreateProductCommand("Laptop", 50000) → WriteStore: Product{id=1}
+  → Event: ProductCreated → ReadStore обновлён
+GetProductQuery(1) → ReadStore: {"id":1,"name":"Laptop","price":50000}
+UpdatePriceCommand(1, 45000) → WriteStore + Event → ReadStore обновлён
+GetStatisticsQuery() → {total:1, avgPrice:45000, categories:{"Electronics":1}}
+CQRS: чтение и запись масштабируются независимо. Запросов обычно больше – ReadStore оптимизирован.
+
+import java.util.*;
+import java.util.function.Consumer;
+
+// Базовые интерфейсы для разделения команд и запросов в паттерне CQRS
+interface Command {} // Интерфейс для всех команд (операций, изменяющих состояние)
+interface Query {}  // Интерфейс для всех запросов (операций чтения)
+interface Event {}   // Интерфейс для событий, возникающих при изменении состояния
+
+// Модель продукта для WriteStore (источник истины — основное хранилище данных)
+class Product {
+    private int id;
+    private String name;
+    private double price;
+    private String category;
+
+    public Product(int id, String name, double price, String category) {
+        this.id = id;
+        this.name = name;
+        this.price = price;
+        this.category = category;
+    }
+
+    // Геттеры для доступа к полям объекта
+    public int getId() { return id; }
+    public String getName() { return name; }
+    public double getPrice() { return price; }
+    public String getCategory() { return category; }
+
+    @Override
+    public String toString() {
+        // Форматируем объект в JSON‑подобный вид для удобного вывода
+        return String.format("{\"id\":%d,\"name\":\"%s\",\"price\":%.2f}", id, name, price);
+    }
+}
+
+// Модели для ReadStore (оптимизированы для быстрого чтения данных)
+class ReadProduct {
+    private int id;
+    private String name;
+    private double price;
+
+    public ReadProduct(int id, String name, double price) {
+        this.id = id;
+        this.name = name;
+        this.price = price;
+    }
+
+    // Геттеры
+    public int getId() { return id; }
+    public String getName() { return name; }
+    public double getPrice() { return price; }
+}
+
+class Statistics {
+    private int total;
+    private double avgPrice;
+    private Map<String, Integer> categories;
+
+    public Statistics(int total, double avgPrice, Map<String, Integer> categories) {
+        this.total = total;
+        this.avgPrice = avgPrice;
+        this.categories = categories;
+    }
+
+    // Геттеры для статистики
+    public int getTotal() { return total; }
+    public double getAvgPrice() { return avgPrice; }
+    public Map<String, Integer> getCategories() { return categories; }
+
+    @Override
+    public String toString() {
+        // Форматируем статистику в читаемый вид
+        return String.format("{total:%d, avgPrice:%.2f, categories:%s}", total, avgPrice, categories);
+    }
+}
+
+// === СОБЫТИЯ ===
+// Событие, возникающее при создании нового продукта
+class ProductCreatedEvent implements Event {
+    private Product product;
+
+    public ProductCreatedEvent(Product product) {
+        this.product = product; // Сохраняем продукт, который был создан
+    }
+
+    public Product getProduct() { return product; }
+}
+
+// Событие при обновлении цены продукта
+class ProductPriceUpdatedEvent implements Event {
+    private int productId;
+    private double newPrice;
+
+    public ProductPriceUpdatedEvent(int productId, double newPrice) {
+        this.productId = productId; // ID продукта, чья цена изменилась
+        this.newPrice = newPrice; // Новая цена
+    }
+
+    public int getProductId() { return productId; }
+    public double getNewPrice() { return newPrice; }
+}
+
+// Событие при удалении продукта
+class ProductDeletedEvent implements Event {
+    private int productId;
+
+    public ProductDeletedEvent(int productId) {
+        this.productId = productId; // ID удалённого продукта
+    }
+
+    public int getProductId() { return productId; }
+}
+
+// === КОМАНДЫ ===
+// Команда для создания нового продукта
+class CreateProductCommand implements Command {
+    private String name;
+    private double price;
+    private String category;
+
+    public CreateProductCommand(String name, double price, String category) {
+        this.name = name;
+        this.price = price;
+        this.category = category;
+    }
+
+    public String getName() { return name; }
+    public double getPrice() { return price; }
+    public String getCategory() { return category; }
+}
+
+// Команда для обновления цены продукта
+class UpdatePriceCommand implements Command {
+    private int productId;
+    private double newPrice;
+
+    public UpdatePriceCommand(int productId, double newPrice) {
+        this.productId = productId;
+        this.newPrice = newPrice;
+    }
+
+    public int getProductId() { return productId; }
+    public double getNewPrice() { return newPrice; }
+}
+
+// Команда для удаления продукта
+class DeleteProductCommand implements Command {
+    private int productId;
+
+    public DeleteProductCommand(int productId) {
+        this.productId = productId;
+    }
+
+    public int getProductId() { return productId; }
+}
+
+// === ЗАПРОСЫ ===
+// Запрос для получения конкретного продукта по ID
+class GetProductQuery implements Query {
+    private int productId;
+
+    public GetProductQuery(int productId) {
+        this.productId = productId;
+    }
+
+    public int getProductId() { return productId; }
+}
+
+// Запрос для получения продуктов по категории
+class GetProductsByCategoryQuery implements Query {
+    private String category;
+
+    public GetProductsByCategoryQuery(String category) {
+        this.category = category;
+    }
+
+    public String getCategory() { return category; }
+}
+
+// Запрос для получения статистики по всем продуктам
+class GetStatisticsQuery implements Query {}
+
+// === ХРАНИЛИЩА ===
+// WriteStore — хранилище для операций записи (источник истины)
+class WriteStore {
+    private List<Product> products = new ArrayList<>(); // Список всех продуктов
+    private int nextId = 1; // Счётчик для генерации уникальных ID
+
+    // Создаёт новый продукт и добавляет его в хранилище
+    public void createProduct(String name, double price, String category) {
+        Product product = new Product(nextId++, name, price, category);
+        products.add(product);
+    }
+
+    // Обновляет цену продукта по ID. Возвращает true, если продукт найден и обновлён
+    public boolean updatePrice(int productId, double newPrice) {
+        for (Product product : products) {
+            if (product.getId() == productId) {
+                product.price = newPrice; // Обновляем цену (в реальности лучше использовать сеттер)
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Удаляет продукт по ID. Возвращает true, если продукт был найден и удалён
+    public boolean deleteProduct(int productId) {
+        Iterator<Product> iterator = products.iterator();
+        while (iterator.hasNext()) {
+            Product product = iterator.next();
+            if (product.getId() == productId) {
+                iterator.remove();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    // Возвращает копию списка всех продуктов (чтобы избежать внешнего изменения хранилища)
+    public List<Product> getAllProducts() {
+        return new ArrayList<>(products);
+    }
+}
+
+// ReadStore — оптимизированное хранилище для операций чтения
+class ReadStore {
+    private Map<Integer, ReadProduct> productsById = new HashMap<>(); // Быстрый доступ к продукту по ID
+    private Statistics statistics = new Statistics(0, 0.0, new HashMap<>()); // Предрассчитанная статистика
+
+    // Обрабатывает событие создания продукта: добавляет его в ReadStore и обновляет статистику
+    public void handleProductCreated(Product product) {
+        ReadProduct readProduct = new ReadProduct(product.getId(), product.getName(), product.getPrice());
+        productsById.put(product.getId(), readProduct);
+
+        // Обновляем статистику: увеличиваем общее количество, пересчитываем среднюю цену, добавляем категорию
+        int total = statistics.getTotal() + 1;
+        double avgPrice = (statistics.getAvgPrice() * (total - 1) + product.getPrice()) / total;
+        Map<String, Integer> categories = new HashMap<>(statistics.getCategories());
+        categories.put(product.getCategory(), categories.getOrDefault(product.getCategory(), 0) + 1);
+        statistics = new Statistics(total, avgPrice, categories);
+    }
+
+    // Обрабатывает обновление цены: обновляет цену в ReadStore и пересчитывает среднюю цену в статистике
+    public void handlePriceUpdated(int productId, double newPrice) {
+        if (productsById.containsKey(productId)) {
+            ReadProduct product = productsById.get(productId);
+            double oldPrice = product.getPrice();
+
+            // Пересчитываем среднюю цену с учётом
