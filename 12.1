@@ -1,0 +1,378 @@
+#include <iostream>
+#include <memory>
+#include <string>
+#include <vector>
+#include <unordered_map>
+#include <map>
+#include <numeric>
+
+// Базовые классы для команд и запросов
+class Command {};
+class Query {};
+class Event {};
+
+// Модель продукта
+struct Product {
+    int id;
+    std::string name;
+    double price;
+    std::string category;
+};
+
+// События
+class ProductCreatedEvent : public Event {
+public:
+    Product product;
+    ProductCreatedEvent(const Product& p) : product(p) {}
+};
+
+class ProductPriceUpdatedEvent : public Event {
+public:
+    int productId;
+    double newPrice;
+    ProductPriceUpdatedEvent(int id, double price) : productId(id), newPrice(price) {}
+};
+
+// Хранилища
+class WriteStore {
+private:
+    std::vector<Product> products;
+    int nextId = 1;
+public:
+    void addProduct(const Product& product) {
+        Product p = product;
+        p.id = nextId++;
+        products.push_back(p);
+    }
+
+    Product* findProduct(int id) {
+        for (auto& p : products) {
+            if (p.id == id) return &p;
+        }
+        return nullptr;
+    }
+
+    const std::vector<Product>& getAllProducts() const { return products; }
+};
+
+class ReadStore {
+private:
+    std::unordered_map<int, Product> productsById;
+    std::map<std::string, int> categoryCounts;
+    double totalPrice = 0;
+    int productCount = 0;
+
+public:
+    void updateAfterCreate(const Product& product) {
+        productsById[product.id] = product;
+        categoryCounts[product.category]++;
+        totalPrice += product.price;
+        productCount++;
+    }
+
+    void updateAfterPriceUpdate(int productId, double newPrice) {
+        auto it = productsById.find(productId);
+        if (it != productsById.end()) {
+            totalPrice += (newPrice - it->second.price);
+            it->second.price = newPrice;
+        }
+    }
+
+    const Product* getProduct(int id) const {
+        auto it = productsById.find(id);
+        return it != productsById.end() ? &it->second : nullptr;
+    }
+
+    std::vector<Product> getProductsByCategory(const std::string& category) const {
+        std::vector<Product> result;
+        for (const auto& pair : productsById) {
+            if (pair.second.category == category) {
+                result.push_back(pair.second);
+            }
+        }
+        return result;
+    }
+
+    struct Statistics {
+        int total;
+        double avgPrice;
+        std::map<std::string, int> categories;
+    };
+
+    Statistics getStatistics() const {
+        Statistics stats;
+        stats.total = productCount;
+        stats.avgPrice = productCount > 0 ? totalPrice / productCount : 0;
+        stats.categories = categoryCounts;
+        return stats;
+    }
+};
+
+// EventBus для синхронизации
+class EventBus {
+private:
+    ReadStore& readStore;
+public:
+    EventBus(ReadStore& rs) : readStore(rs) {}
+
+    void publish(std::shared_ptr<Event> event) {
+        if (auto* createdEvent = dynamic_cast<ProductCreatedEvent*>(event.get())) {
+            readStore.updateAfterCreate(createdEvent->product);
+        } else if (auto* updatedEvent = dynamic_cast<ProductPriceUpdatedEvent*>(event.get())) {
+            readStore.updateAfterPriceUpdate(updatedEvent->productId, updatedEvent->newPrice);
+        }
+    }
+};
+
+// Команды
+class CreateProductCommand : public Command {
+public:
+    std::string name;
+    double price;
+    std::string category;
+    CreateProductCommand(const std::string& n, double p, const std::string& c)
+        : name(n), price(p), category(c) {}
+};
+
+class UpdatePriceCommand : public Command {
+public:
+    int productId;
+    double newPrice;
+    UpdatePriceCommand(int id, double price)
+        : productId(id), newPrice(price) {}
+};
+
+class DeleteProductCommand : public Command {
+public:
+    int productId;
+    DeleteProductCommand(int id) : productId(id) {}
+};
+
+// Запросы
+class GetProductQuery : public Query {
+public:
+    int productId;
+    GetProductQuery(int id) : productId(id) {}
+};
+
+class GetProductsByCategoryQuery : public Query {
+public:
+    std::string category;
+    GetProductsByCategoryQuery(const std::string& cat) : category(cat) {}
+};
+
+class GetStatisticsQuery : public Query {};
+
+// Обработчики команд
+class CommandHandler {
+public:
+    virtual void handle(std::shared_ptr<Command> command) = 0;
+    virtual ~CommandHandler() = default;
+};
+
+class CreateProductHandler : public CommandHandler {
+private:
+    WriteStore& writeStore;
+    EventBus& eventBus;
+public:
+    CreateProductHandler(WriteStore& ws, EventBus& eb)
+        : writeStore(ws), eventBus(eb) {}
+
+    void handle(std::shared_ptr<Command> command) override {
+        auto createCmd = std::dynamic_pointer_cast<CreateProductCommand>(command);
+        Product product{0, createCmd->name, createCmd->price, createCmd->category};
+        writeStore.addProduct(product);
+
+        // Публикуем событие о создании продукта
+        eventBus.publish(std::make_shared<ProductCreatedEvent>(product));
+    }
+};
+
+class UpdatePriceHandler : public CommandHandler {
+private:
+    WriteStore& writeStore;
+    EventBus& eventBus;
+public:
+    UpdatePriceHandler(WriteStore& ws, EventBus& eb)
+        : writeStore(ws), eventBus(eb) {}
+
+    void handle(std::shared_ptr<Command> command) override {
+        auto updateCmd = std::dynamic_pointer_cast<UpdatePriceCommand>(command);
+        auto* product = writeStore.findProduct(updateCmd->productId);
+        if (product) {
+            product->price = updateCmd->newPrice;
+            // Публикуем событие об обновлении цены
+            eventBus.publish(std::make_shared<ProductPriceUpdatedEvent>(
+                updateCmd->productId, updateCmd->newPrice));
+        }
+    }
+};
+
+// Обработчики запросов
+class QueryHandler {
+public:
+    virtual std::shared_ptr<void> handle(std::shared_ptr<Query> query) = 0;
+    virtual ~QueryHandler() = default;
+};
+
+class GetProductHandler : public QueryHandler {
+private:
+    ReadStore& readStore;
+public:
+    GetProductHandler(ReadStore& rs) : readStore(rs) {}
+
+    std::shared_ptr<void> handle(std::shared_ptr<Query> query) override {
+        auto getCmd = std::dynamic_pointer_cast<GetProductQuery>(query);
+        const Product* product = readStore.getProduct(getCmd->productId);
+
+        if (product) {
+            return std::make_shared<Product>(*product);
+        }
+        return nullptr;
+    }
+};
+
+class GetProductsByCategoryHandler : public QueryHandler {
+private:
+    ReadStore& readStore;
+public:
+    GetProductsByCategoryHandler(ReadStore& rs) : readStore(rs) {}
+
+    std::shared_ptr<void> handle(std::shared_ptr<Query> query) override {
+        auto getCmd = std::dynamic_pointer_cast<GetProductsByCategoryQuery>(query);
+        auto products = readStore.getProductsByCategory(getCmd->category);
+        return std::make_shared<std::vector<Product>>(products);
+    }
+};
+
+class GetStatisticsHandler : public QueryHandler {
+private:
+    ReadStore& readStore;
+public:
+    GetStatisticsHandler(ReadStore& rs) : readStore(rs) {}
+
+    std::shared_ptr<void> handle(std::shared_ptr<Query> query) override {
+        auto stats = readStore.getStatistics();
+        return std::make_shared<ReadStore::Statistics>(stats);
+    }
+};
+
+// Шины команд и запросов
+class CommandBus {
+private:
+    std::unordered_map<std::string, std::shared_
+    // Продолжение реализации CQRS на C++
+
+#include <typeinfo>
+
+class CommandBus {
+private:
+    std::unordered_map<std::string, std::shared_ptr<CommandHandler>> handlers;
+public:
+    template<typename T>
+    void registerHandler(std::shared_ptr<CommandHandler> handler) {
+        handlers[typeid(T).name()] = handler;
+    }
+
+    void send(std::shared_ptr<Command> command) {
+        auto handler = handlers[typeid(*command.get()).name()];
+        if (handler) {
+            handler->handle(command);
+        } else {
+            std::cout << "No handler registered for command: "
+                      << typeid(*command.get()).name() << std::endl;
+        }
+    }
+};
+
+class QueryBus {
+private:
+    std::unordered_map<std::string, std::shared_ptr<QueryHandler>> handlers;
+public:
+    template<typename T>
+    void registerHandler(std::shared_ptr<QueryHandler> handler) {
+        handlers[typeid(T).name()] = handler;
+    }
+
+    std::shared_ptr<void> send(std::shared_ptr<Query> query) {
+        auto handler = handlers[typeid(*query.get()).name()];
+        if (handler) {
+            return handler->handle(query);
+        } else {
+            std::cout << "No handler registered for query: "
+                      << typeid(*query.get()).name() << std::endl;
+            return nullptr;
+        }
+    }
+};
+
+// Пример использования
+int main() {
+    // Инициализируем хранилища
+    WriteStore writeStore;
+    ReadStore readStore;
+
+    // Создаём EventBus для синхронизации
+    EventBus eventBus(readStore);
+
+    // Создаём шины
+    CommandBus commandBus;
+    QueryBus queryBus;
+
+    // Регистрируем обработчики команд
+    commandBus.registerHandler<CreateProductCommand>(
+        std::make_shared<CreateProductHandler>(writeStore, eventBus)
+    );
+    commandBus.registerHandler<UpdatePriceCommand>(
+        std::make_shared<UpdatePriceHandler>(writeStore, eventBus)
+    );
+
+    // Регистрируем обработчики запросов
+    queryBus.registerHandler<GetProductQuery>(
+        std::make_shared<GetProductHandler>(readStore)
+    );
+    queryBus.registerHandler<GetProductsByCategoryQuery>(
+        std::make_shared<GetProductsByCategoryHandler>(readStore)
+    );
+    queryBus.registerHandler<GetStatisticsQuery>(
+        std::make_shared<GetStatisticsHandler>(readStore)
+    );
+
+    // Пример работы с системой
+    std::cout << "=== Создание продукта ===" << std::endl;
+    auto createCmd = std::make_shared<CreateProductCommand>("Laptop", 50000, "Electronics");
+    commandBus.send(createCmd);
+
+    // Получаем продукт по ID
+    std::cout << "\n=== Получение продукта по ID ===" << std::endl;
+    auto getQuery = std::make_shared<GetProductQuery>(1);
+    auto result = queryBus.send(getQuery);
+    if (result) {
+        auto* product = static_cast<Product*>(result.get());
+        std::cout << "Product: ID=" << product->id
+                  << ", Name=" << product->name
+                  << ", Price=" << product->price << std::endl;
+    }
+
+    // Обновляем цену
+    std::cout << "\n=== Обновление цены ===" << std::endl;
+    auto updateCmd = std::make_shared<UpdatePriceCommand>(1, 45000);
+    commandBus.send(updateCmd);
+
+    // Получаем статистику
+    std::cout << "\n=== Получение статистики ===" << std::endl;
+    auto statsQuery = std::make_shared<GetStatisticsQuery>();
+    auto statsResult = queryBus.send(statsQuery);
+    if (statsResult) {
+        auto* stats = static_cast<ReadStore::Statistics*>(statsResult.get());
+        std::cout << "Statistics: total=" << stats->total
+                  << ", avgPrice=" << stats->avgPrice << std::endl;
+        std::cout << "Categories: ";
+        for (const auto& [cat, count] : stats->categories) {
+            std::cout << cat << ":" << count << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    return 0;
+}
