@@ -1,0 +1,531 @@
+#include <iostream>
+#include <vector>
+#include <unordered_map>
+#include <memory>
+#include <functional>
+#include <any>
+#include <stdexcept>
+#include <algorithm>
+#include <string>
+#include <sstream>
+
+// ============ Event System (основы шины событий из задачи B5) ============
+// Базовый класс для всех событий
+struct Event {
+    virtual ~Event() = default;
+    virtual std::string getType() const = 0;
+};
+
+// Событие создания продукта
+struct ProductCreatedEvent : Event {
+    int productId;
+    std::string name;
+    double price;
+    std::string category;
+    
+    ProductCreatedEvent(int id, const std::string& n, double p, const std::string& cat)
+        : productId(id), name(n), price(p), category(cat) {}
+    
+    std::string getType() const override { return "ProductCreated"; }
+};
+
+// Событие обновления цены
+struct PriceUpdatedEvent : Event {
+    int productId;
+    double newPrice;
+    
+    PriceUpdatedEvent(int id, double price) : productId(id), newPrice(price) {}
+    
+    std::string getType() const override { return "PriceUpdated"; }
+};
+
+// Событие удаления продукта
+struct ProductDeletedEvent : Event {
+    int productId;
+    
+    ProductDeletedEvent(int id) : productId(id) {}
+    
+    std::string getType() const override { return "ProductDeleted"; }
+};
+
+// Простая шина событий (подписчики обрабатывают события)
+class EventBus {
+private:
+    // Подписчик: функция, принимающая любой Event
+    using EventHandler = std::function<void(const Event&)>;
+    std::unordered_map<std::string, std::vector<EventHandler>> subscribers;
+    
+public:
+    void subscribe(const std::string& eventType, EventHandler handler) {
+        subscribers[eventType].push_back(handler);
+    }
+    
+    void publish(const Event& event) {
+        std::string type = event.getType();
+        if (subscribers.find(type) != subscribers.end()) {
+            for (const auto& handler : subscribers[type]) {
+                handler(event);
+            }
+        }
+    }
+};
+
+// ============ Domain Model (Write Store) ============
+// Модель продукта для записи (нормализованная, полная)
+struct Product {
+    int id;
+    std::string name;
+    double price;
+    std::string category;
+    
+    Product(int i, const std::string& n, double p, const std::string& cat)
+        : id(i), name(n), price(p), category(cat) {}
+};
+
+// WriteStore - хранилище для команд (список продуктов, гарантия целостности)
+class WriteStore {
+private:
+    std::vector<Product> products;
+    int nextId = 1;
+    
+public:
+    // Добавление продукта (возвращает ID)
+    int addProduct(const std::string& name, double price, const std::string& category) {
+        int id = nextId++;
+        products.emplace_back(id, name, price, category);
+        return id;
+    }
+    
+    // Обновление цены
+    void updatePrice(int productId, double newPrice) {
+        auto it = std::find_if(products.begin(), products.end(),
+                               [productId](const Product& p) { return p.id == productId; });
+        if (it != products.end()) {
+            it->price = newPrice;
+        } else {
+            throw std::runtime_error("Product not found");
+        }
+    }
+    
+    // Удаление продукта
+    void deleteProduct(int productId) {
+        auto it = std::remove_if(products.begin(), products.end(),
+                                 [productId](const Product& p) { return p.id == productId; });
+        if (it != products.end()) {
+            products.erase(it, products.end());
+        } else {
+            throw std::runtime_error("Product not found");
+        }
+    }
+    
+    // Для отладки
+    const std::vector<Product>& getProducts() const { return products; }
+};
+
+// ============ Read Model (Read Store - денормализованная для быстрых запросов) ==========
+// Денормализованная модель продукта для чтения
+struct ProductReadModel {
+    int id;
+    std::string name;
+    double price;
+    std::string category;
+};
+
+// Статистика по продуктам
+struct Statistics {
+    int totalProducts = 0;
+    double averagePrice = 0.0;
+    std::unordered_map<std::string, int> categoryCount;
+};
+
+// ReadStore - оптимизирован для запросов (Map для быстрого поиска + статистика)
+class ReadStore {
+private:
+    std::unordered_map<int, ProductReadModel> productsById;  // O(1) поиск по ID
+    Statistics stats;
+    
+    void recalculateStatistics() {
+        if (productsById.empty()) {
+            stats = Statistics();
+            return;
+        }
+        
+        stats.totalProducts = productsById.size();
+        double totalPrice = 0.0;
+        stats.categoryCount.clear();
+        
+        for (const auto& [id, product] : productsById) {
+            totalPrice += product.price;
+            stats.categoryCount[product.category]++;
+        }
+        stats.averagePrice = totalPrice / stats.totalProducts;
+    }
+    
+public:
+    // Обновление при событии создания продукта
+    void handleProductCreated(const ProductCreatedEvent& event) {
+        ProductReadModel model;
+        model.id = event.productId;
+        model.name = event.name;
+        model.price = event.price;
+        model.category = event.category;
+        productsById[event.productId] = model;
+        recalculateStatistics();
+    }
+    
+    // Обновление при событии обновления цены
+    void handlePriceUpdated(const PriceUpdatedEvent& event) {
+        auto it = productsById.find(event.productId);
+        if (it != productsById.end()) {
+            it->second.price = event.newPrice;
+            recalculateStatistics();
+        }
+    }
+    
+    // Обновление при событии удаления
+    void handleProductDeleted(const ProductDeletedEvent& event) {
+        productsById.erase(event.productId);
+        recalculateStatistics();
+    }
+    
+    // Запросы (не изменяют состояние)
+    std::optional<ProductReadModel> getProduct(int id) const {
+        auto it = productsById.find(id);
+        if (it != productsById.end()) {
+            return it->second;
+        }
+        return std::nullopt;
+    }
+    
+    std::vector<ProductReadModel> getProductsByCategory(const std::string& category) const {
+        std::vector<ProductReadModel> result;
+        for (const auto& [id, product] : productsById) {
+            if (product.category == category) {
+                result.push_back(product);
+            }
+        }
+        return result;
+    }
+    
+    Statistics getStatistics() const {
+        return stats;
+    }
+};
+
+// ============ Commands (изменяют состояние) ============
+// Базовый класс для команд
+struct Command {
+    virtual ~Command() = default;
+};
+
+struct CreateProductCommand : Command {
+    std::string name;
+    double price;
+    std::string category;
+    
+    CreateProductCommand(const std::string& n, double p, const std::string& cat)
+        : name(n), price(p), category(cat) {}
+};
+
+struct UpdatePriceCommand : Command {
+    int productId;
+    double newPrice;
+    
+    UpdatePriceCommand(int id, double price) : productId(id), newPrice(price) {}
+};
+
+struct DeleteProductCommand : Command {
+    int productId;
+    
+    DeleteProductCommand(int id) : productId(id) {}
+};
+
+// ============ Queries (не изменяют состояние, возвращают результат) ============
+struct Query {
+    virtual ~Query() = default;
+};
+
+struct GetProductQuery : Query {
+    int productId;
+    
+    GetProductQuery(int id) : productId(id) {}
+};
+
+struct GetProductsByCategoryQuery : Query {
+    std::string category;
+    
+    GetProductsByCategoryQuery(const std::string& cat) : category(cat) {}
+};
+
+struct GetStatisticsQuery : Query {
+    // Нет полей, просто запрос статистики
+};
+
+// ============ Command Handlers ============
+class CreateProductHandler {
+private:
+    WriteStore& writeStore;
+    EventBus& eventBus;
+    
+public:
+    CreateProductHandler(WriteStore& ws, EventBus& eb) : writeStore(ws), eventBus(eb) {}
+    
+    void handle(const CreateProductCommand& command) {
+        // 1. Изменяем WriteStore
+        int newId = writeStore.addProduct(command.name, command.price, command.category);
+        
+        // 2. Публикуем событие для синхронизации ReadStore
+        ProductCreatedEvent event(newId, command.name, command.price, command.category);
+        eventBus.publish(event);
+        
+        std::cout << "[Command] Created product: ID=" << newId 
+                  << ", Name=" << command.name << "\n";
+    }
+};
+
+class UpdatePriceHandler {
+private:
+    WriteStore& writeStore;
+    EventBus& eventBus;
+    
+public:
+    UpdatePriceHandler(WriteStore& ws, EventBus& eb) : writeStore(ws), eventBus(eb) {}
+    
+    void handle(const UpdatePriceCommand& command) {
+        writeStore.updatePrice(command.productId, command.newPrice);
+        
+        PriceUpdatedEvent event(command.productId, command.newPrice);
+        eventBus.publish(event);
+        
+        std::cout << "[Command] Updated price: Product ID=" << command.productId 
+                  << ", New price=" << command.newPrice << "\n";
+    }
+};
+
+class DeleteProductHandler {
+private:
+    WriteStore& writeStore;
+    EventBus& eventBus;
+    
+public:
+    DeleteProductHandler(WriteStore& ws, EventBus& eb) : writeStore(ws), eventBus(eb) {}
+    
+    void handle(const DeleteProductCommand& command) {
+        writeStore.deleteProduct(command.productId);
+        
+        ProductDeletedEvent event(command.productId);
+        eventBus.publish(event);
+        
+        std::cout << "[Command] Deleted product: ID=" << command.productId << "\n";
+    }
+};
+
+// ============ Query Handlers ============
+class GetProductHandler {
+private:
+    const ReadStore& readStore;
+    
+public:
+    GetProductHandler(const ReadStore& rs) : readStore(rs) {}
+    
+    std::optional<ProductReadModel> handle(const GetProductQuery& query) const {
+        return readStore.getProduct(query.productId);
+    }
+};
+
+class GetProductsByCategoryHandler {
+private:
+    const ReadStore& readStore;
+    
+public:
+    GetProductsByCategoryHandler(const ReadStore& rs) : readStore(rs) {}
+    
+    std::vector<ProductReadModel> handle(const GetProductsByCategoryQuery& query) const {
+        return readStore.getProductsByCategory(query.category);
+    }
+};
+
+class GetStatisticsHandler {
+private:
+    const ReadStore& readStore;
+    
+public:
+    GetStatisticsHandler(const ReadStore& rs) : readStore(rs) {}
+    
+    Statistics handle(const GetStatisticsQuery& query) const {
+        return readStore.getStatistics();
+    }
+};
+
+// ============ Command Bus ============
+class CommandBus {
+private:
+    WriteStore& writeStore;
+    EventBus& eventBus;
+    CreateProductHandler createHandler;
+    UpdatePriceHandler updateHandler;
+    DeleteProductHandler deleteHandler;
+    
+public:
+    CommandBus(WriteStore& ws, EventBus& eb) 
+        : writeStore(ws), eventBus(eb),
+          createHandler(ws, eb), updateHandler(ws, eb), deleteHandler(ws, eb) {}
+    
+    void dispatch(const Command& command) {
+        if (const auto* cmd = dynamic_cast<const CreateProductCommand*>(&command)) {
+            createHandler.handle(*cmd);
+        } else if (const auto* cmd = dynamic_cast<const UpdatePriceCommand*>(&command)) {
+            updateHandler.handle(*cmd);
+        } else if (const auto* cmd = dynamic_cast<const DeleteProductCommand*>(&command)) {
+            deleteHandler.handle(*cmd);
+        } else {
+            throw std::runtime_error("Unknown command type");
+        }
+    }
+};
+
+// ============ Query Bus ============
+class QueryBus {
+private:
+    const ReadStore& readStore;
+    GetProductHandler getProductHandler;
+    GetProductsByCategoryHandler getByCategoryHandler;
+    GetStatisticsHandler getStatisticsHandler;
+    
+public:
+    QueryBus(const ReadStore& rs) 
+        : readStore(rs), getProductHandler(rs), getByCategoryHandler(rs), getStatisticsHandler(rs) {}
+    
+    template<typename TQuery, typename TResult>
+    TResult dispatch(const TQuery& query) const {
+        if constexpr (std::is_same_v<TQuery, GetProductQuery>) {
+            auto result = getProductHandler.handle(query);
+            if (result.has_value()) {
+                return result.value();
+            } else {
+                throw std::runtime_error("Product not found");
+            }
+        } else if constexpr (std::is_same_v<TQuery, GetProductsByCategoryQuery>) {
+            return getByCategoryHandler.handle(query);
+        } else if constexpr (std::is_same_v<TQuery, GetStatisticsQuery>) {
+            return getStatisticsHandler.handle(query);
+        } else {
+            throw std::runtime_error("Unknown query type");
+        }
+    }
+};
+
+// ============ Helper function для форматирования вывода ============
+void printProduct(const ProductReadModel& product) {
+    std::cout << "  {id:" << product.id 
+              << ", name:\"" << product.name 
+              << "\", price:" << product.price 
+              << ", category:\"" << product.category << "\"}\n";
+}
+
+void printStatistics(const Statistics& stats) {
+    std::cout << "  {total:" << stats.totalProducts 
+              << ", avgPrice:" << stats.averagePrice << ", categories:{";
+    bool first = true;
+    for (const auto& [cat, count] : stats.categoryCount) {
+        if (!first) std::cout << ", ";
+        std::cout << "\"" << cat << "\":" << count;
+        first = false;
+    }
+    std::cout << "}}\n";
+}
+
+// ============ Main Demo ============
+int main() {
+    std::cout << "========== CQRS Pattern Demo ==========\n\n";
+    
+    // 1. Инициализация инфраструктуры
+    WriteStore writeStore;
+    ReadStore readStore;
+    EventBus eventBus;
+    
+    // 2. Подписываем ReadStore на события для синхронизации
+    eventBus.subscribe("ProductCreated", [&readStore](const Event& e) {
+        const auto& event = dynamic_cast<const ProductCreatedEvent&>(e);
+        readStore.handleProductCreated(event);
+    });
+    
+    eventBus.subscribe("PriceUpdated", [&readStore](const Event& e) {
+        const auto& event = dynamic_cast<const PriceUpdatedEvent&>(e);
+        readStore.handlePriceUpdated(event);
+    });
+    
+    eventBus.subscribe("ProductDeleted", [&readStore](const Event& e) {
+        const auto& event = dynamic_cast<const ProductDeletedEvent&>(e);
+        readStore.handleProductDeleted(event);
+    });
+    
+    // 3. Создаем CommandBus и QueryBus
+    CommandBus commandBus(writeStore, eventBus);
+    QueryBus queryBus(readStore);
+    
+    // 4. Демонстрация работы
+    std::cout << "--- 1. CreateProductCommand(\"Laptop\", 50000, \"Electronics\") ---\n";
+    commandBus.dispatch(CreateProductCommand("Laptop", 50000, "Electronics"));
+    
+    std::cout << "\n--- 2. GetProductQuery(1) ---\n";
+    try {
+        auto product = queryBus.dispatch<GetProductQuery, ProductReadModel>(GetProductQuery(1));
+        printProduct(product);
+    } catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << "\n";
+    }
+    
+    std::cout << "\n--- 3. UpdatePriceCommand(1, 45000) ---\n";
+    commandBus.dispatch(UpdatePriceCommand(1, 45000));
+    
+    std::cout << "\n--- 4. GetProductQuery(1) после обновления ---\n";
+    try {
+        auto product = queryBus.dispatch<GetProductQuery, ProductReadModel>(GetProductQuery(1));
+        printProduct(product);
+    } catch (const std::exception& e) {
+        std::cout << "Error: " << e.what() << "\n";
+    }
+    
+    std::cout << "\n--- 5. CreateProductCommand(\"Mouse\", 1500, \"Electronics\") ---\n";
+    commandBus.dispatch(CreateProductCommand("Mouse", 1500, "Electronics"));
+    
+    std::cout << "\n--- 6. CreateProductCommand(\"Desk\", 30000, \"Furniture\") ---\n";
+    commandBus.dispatch(CreateProductCommand("Desk", 30000, "Furniture"));
+    
+    std::cout << "\n--- 7. GetStatisticsQuery() ---\n";
+    auto stats = queryBus.dispatch<GetStatisticsQuery, Statistics>(GetStatisticsQuery());
+    printStatistics(stats);
+    
+    std::cout << "\n--- 8. GetProductsByCategoryQuery(\"Electronics\") ---\n";
+    auto electronics = queryBus.dispatch<GetProductsByCategoryQuery, std::vector<ProductReadModel>>(
+        GetProductsByCategoryQuery("Electronics"));
+    for (const auto& product : electronics) {
+        printProduct(product);
+    }
+    
+    std::cout << "\n--- 9. DeleteProductCommand(2) ---\n";
+    commandBus.dispatch(DeleteProductCommand(2));
+    
+    std::cout << "\n--- 10. GetStatisticsQuery() после удаления ---\n";
+    stats = queryBus.dispatch<GetStatisticsQuery, Statistics>(GetStatisticsQuery());
+    printStatistics(stats);
+    
+    // ============ Ответы на вопросы ============
+    std::cout << "\n\n========== ANSWERS ==========\n";
+    std::cout << "\n44. Зачем разделять команды и запросы в архитектуре?\n";
+    std::cout << "    - Масштабирование: запросов обычно больше, их можно реплицировать\n";
+    std::cout << "    - Оптимизация: ReadStore денормализован для быстрых запросов, WriteStore нормализован для целостности\n";
+    std::cout << "    - Безопасность: разные модели доступа для чтения и записи\n";
+    std::cout << "    - Сложность бизнес-логики: команды могут содержать валидацию, запросы — только чтение\n";
+    std::cout << "    - Производительность: можно использовать разные БД (SQL для записи, NoSQL для чтения)\n";
+    
+    std::cout << "\n45. Как CQRS связан с Event Sourcing?\n";
+    std::cout << "    - CQRS не требует Event Sourcing, но они часто используются вместе\n";
+    std::cout << "    - Event Sourcing хранит все изменения как события (источник истины)\n";
+    std::cout << "    - CQRS разделяет чтение и запись, Event Sourcing обеспечивает аудит и восстановление\n";
+    std::cout << "    - В нашем примере: команды → события → обновление ReadStore → это основа Event Sourcing\n";
+    std::cout << "    - Event Sourcing добавляет: хранение всех событий, replay для восстановления состояния\n";
+    
+    return 0;
+}
