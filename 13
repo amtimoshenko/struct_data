@@ -1,0 +1,174 @@
+4. Задача: Реализуйте обобщённую коллекцию TypedList[T] с использованием generics Python.
+Методы TypedList:
+add(item), remove(item), get(index), size(), contains(item), to_list()
+filter(predicate) → TypedList, map(func) → TypedList
+__iter__, __len__, __getitem__, __repr__
+Используйте аннотации типов (typing.Generic[T], TypeVar).
+Протестируйте: TypedList[int], TypedList[str], TypedList[dict].
+Реализуйте метод group_by(key_func) → dict[Any, TypedList[T]].
+
+Ответьте:
+1. Что такое TypeVar и Generic в Python? Как они работают в runtime?
+2. Чем typing.List[int] отличается от list[int] (Python 3.9+)?
+3. Что такое Protocol в Python и чем он отличается от ABC?
+⚠ Ограничения:	Аннотации типов обязательны для всех методов.
+filter() и map() возвращают новый TypedList, не изменяя исходный.
+group_by() должен работать для любого ключа (строка, число, tuple).
+✓ Ожидаемый результат:	TypedList[int]: add 10,20,30,40,50 → TypedList[10, 20, 30, 40, 50]
+filter(lambda x: x > 25) → TypedList[30, 40, 50]
+map(lambda x: x * 2) → TypedList[20, 40, 60, 80, 100]
+group_by(lambda x: x % 2 == 0) на [1,2,3,4,5] → {True: TypedList[2,4], False: TypedList[1,3,5]}
+TypeVar T — переменная типа, Generic[T] — параметрический класс. В runtime аннотации не проверяются — Python duck typing, не type erasure как в Java
+from typing import Generic, TypeVar, Callable, Any, Dict
+
+# Объявляем переменную типа T — она будет использоваться для указания
+# обобщённого типа в нашем классе TypedList.
+# T может быть любым типом: int, str, dict и т. д.
+T = TypeVar('T')
+
+
+class TypedList(Generic[T]):
+    """
+    Обобщённая коллекция TypedList, работающая с любым типом данных T.
+    Поддерживает основные операции: добавление, удаление, фильтрацию, преобразование и группировку.
+    """
+
+    def __init__(self) -> None:
+        """Инициализируем пустой список для хранения элементов."""
+        self._items: list[T] = []
+
+    def add(self, item: T) -> None:
+        """Добавляет элемент в конец списка."""
+        self._items.append(item)
+
+    def remove(self, item: T) -> None:
+        """Удаляет первый найденный элемент из списка.
+        Если элемент не найден, вызовет ValueError."""
+        self._items.remove(item)
+
+    def get(self, index: int) -> T:
+        """Возвращает элемент по указанному индексу.
+        Если индекс вне диапазона, вызовет IndexError."""
+        return self._items[index]
+
+    def size(self) -> int:
+        """Возвращает количество элементов в списке."""
+        return len(self._items)
+
+    def contains(self, item: T) -> bool:
+        """Проверяет, содержится ли элемент в списке.
+        Возвращает True, если элемент найден, иначе False."""
+        return item in self._items
+
+    def to_list(self) -> list[T]:
+        """Возвращает копию внутреннего списка как обычный list[T].
+        Изменения в возвращаемом списке не затрагивают исходный TypedList."""
+        return self._items.copy()
+
+    def filter(self, predicate: Callable[[T], bool]) -> 'TypedList[T]':
+        """
+        Фильтрует элементы списка с помощью предиката (функции, возвращающей bool).
+        Создаёт новый TypedList с элементами, для которых predicate(item) == True.
+        Исходный список не изменяется.
+
+        Args:
+            predicate: функция, принимающая элемент типа T и возвращающая bool.
+
+        Returns:
+            Новый TypedList[T] с отфильтрованными элементами.
+        """
+        result = TypedList[T]()
+        for item in self._items:
+            if predicate(item):
+                result.add(item)
+        return result
+
+    def map(self, func: Callable[[T], T]) -> 'TypedList[T]':
+        """
+        Преобразует каждый элемент списка с помощью функции func.
+        Создаёт новый TypedList, где каждый элемент — результат func(item).
+        Исходный список не изменяется.
+
+        Args:
+            func: функция, принимающая элемент типа T и возвращающая элемент типа T.
+
+        Returns:
+            Новый TypedList[T] с преобразованными элементами.
+        """
+        result = TypedList[T]()
+        for item in self._items:
+            result.add(func(item))
+        return result
+
+    def group_by(self, key_func: Callable[[T], Any]) -> Dict[Any, 'TypedList[T]']:
+        """
+        Группирует элементы списка по ключу, возвращаемому key_func.
+        Создаёт словарь, где:
+          - ключ — результат key_func(item) для каждого элемента;
+          - значение — TypedList элементов, дающих этот ключ.
+
+        Args:
+            key_func: функция, принимающая элемент типа T и возвращающая ключ любого типа (Any).
+
+        Returns:
+            Словарь типа Dict[Any, TypedList[T]], где ключи — результаты key_func,
+            а значения — списки элементов, сгруппированных по этим ключам.
+        """
+        groups: Dict[Any, TypedList[T]] = {}
+        for item in self._items:
+            key = key_func(item)
+            if key not in groups:
+                groups[key] = TypedList[T]()
+            groups[key].add(item)
+        return groups
+
+    def __iter__(self) -> iter:
+        """Позволяет использовать TypedList в циклах for и других итерационных контекстах."""
+        return iter(self._items)
+
+    def __len__(self) -> int:
+        """Возвращает длину списка (количество элементов).
+        Позволяет использовать len(typed_list)."""
+        return len(self._items)
+
+    def __getitem__(self, index: int) -> T:
+        """Позволяет получать элементы по индексу через синтаксис typed_list[i]."""
+        return self._items[index]
+
+    def __repr__(self) -> str:
+        """Возвращает строковое представление объекта для удобного вывода в консоль."""
+        return f"TypedList({self._items})"
+
+
+
+# Тестирование реализации
+if __name__ == "__main__":
+    # Тестируем TypedList[int]
+    print("=== Тестирование TypedList[int] ===")
+    int_list = TypedList[int]()
+    for num in [10, 20, 30, 40, 50]:
+        int_list.add(num)
+    print(f"Исходный список: {int_list}")
+
+    filtered = int_list.filter(lambda x: x > 25)
+    print(f"После filter(x > 25): {filtered}")
+
+    mapped = int_list.map(lambda x: x * 2)
+    print(f"После map(x * 2): {mapped}")
+
+    grouped = int_list.group_by(lambda x: x % 2 == 0)
+    print(f"После group_by(x % 2 == 0): {grouped}")
+
+    # Тестируем TypedList[str]
+    print("\n=== Тестирование TypedList[str] ===")
+    str_list = TypedList[str]()
+    for word in ['apple', 'banana', 'cherry']:
+        str_list.add(word)
+    print(f"Список строк: {str_list}")
+
+    # Тестируем TypedList[dict]
+    print("\n=== Тестирование TypedList[dict] ===")
+    dict_list = TypedList[dict]()
+    for d in [{'id': 1}, {'id': 2}, {'id': 3}]:
+        dict_list.add(d)
+    print(f"Список словарей: {dict_list}")
