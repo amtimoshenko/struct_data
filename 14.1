@@ -1,0 +1,296 @@
+import json
+import csv
+import pickle
+from dataclasses import dataclass, field, is_dataclass, fields
+from typing import Any, Optional, Type, Dict, List, Set
+from datetime import date, datetime
+from decimal import Decimal
+from enum import Enum
+from uuid import UUID
+
+# Базовый класс для сериализаторов типов — определяет интерфейс
+class TypeSerializer:
+    def serialize(self, obj: Any) -> Any:
+        raise NotImplementedError
+
+    def deserialize(self, data: Any, cls: type) -> Any:
+        raise NotImplementedError
+
+# Сериализатор по умолчанию — просто передаёт объект без изменений
+class DefaultTypeSerializer(TypeSerializer):
+    def serialize(self, obj: Any) -> Any:
+        return obj
+
+    def deserialize(self, data: Any, cls: type) -> Any:
+        return data
+
+# Сериализатор для типа date — преобразует в строку ISO-формата и обратно
+class DateSerializer(TypeSerializer):
+    def serialize(self, obj: date) -> str:
+        return obj.isoformat()  # Преобразуем дату в строку формата YYYY-MM-DD
+
+    def deserialize(self, data: str, cls: type) -> date:
+        return date.fromisoformat(data)  # Восстанавливаем дату из строки
+
+# Сериализатор для datetime — аналогично date, но с временем
+class DateTimeSerializer(TypeSerializer):
+    def serialize(self, obj: datetime) -> str:
+        return obj.isoformat()  # Преобразуем в строку с датой и временем
+
+    def deserialize(self, data: str, cls: type) -> datetime:
+        return datetime.fromisoformat(data)  # Восстанавливаем datetime из строки
+# Сериализатор для Decimal — сохраняет точность десятичных чисел
+class DecimalSerializer(TypeSerializer):
+    def serialize(self, obj: Decimal) -> str:
+        return str(obj)  # Преобразуем Decimal в строку, чтобы сохранить точность
+
+    def deserialize(self, data: str, cls: type) -> Decimal:
+        return Decimal(data)  # Восстанавливаем Decimal из строки
+# Сериализатор для Enum — сохраняет только значение перечисления
+class EnumSerializer(TypeSerializer):
+    def serialize(self, obj: Enum) -> Any:
+        return obj.value  # Сохраняем только значение элемента перечисления
+
+    def deserialize(self, data: Any, cls: type) -> Enum:
+        return cls(data)  # Создаём элемент перечисления из сохранённого значения
+# Сериализатор для UUID — преобразует в строку и обратно
+class UUIDSerializer(TypeSerializer):
+    def serialize(self, obj: UUID) -> str:
+        return str(obj)  # UUID в строковом представлении
+
+    def deserialize(self, data: str, cls: type) -> UUID:
+        return UUID(data)  # Восстанавливаем UUID из строки
+
+@dataclass
+class Employee:
+    id: int
+    name: str
+    manager: Optional['Employee'] = None  # Ссылка на менеджера (может быть циклической)
+    subordinates: List['Employee'] = field(default_factory=list)  # Список подчинённых
+
+class ObjectSerializer:
+    def __init__(self):
+        # Словарь сериализаторов для разных типов данных
+        self.type_serializers: Dict[type, TypeSerializer] = {
+            date: DateSerializer(),
+            datetime: DateTimeSerializer(),
+            Decimal: DecimalSerializer(),
+            Enum: EnumSerializer(),
+            UUID: UUIDSerializer(),
+        }
+        self._current_id = 0  # Текущий ID для присвоения объектам
+        self._id_to_obj: Dict[int, Any] = {}  # Соответствие ID → объект (для десериализации)
+        self._obj_to_id: Dict[int, int] = {}  # Соответствие id(obj) → reference_id (для обнаружения циклов)
+
+    def register_type(self, cls: type, serializer: TypeSerializer):
+        """Регистрация кастомного сериализатора для указанного типа"""
+        self.type_serializers[cls] = serializer
+
+    def _get_next_id(self) -> int:
+        """Получение следующего уникального ID для объекта"""
+        result = self._current_id
+        self._current_id += 1
+        return result
+
+    def _serialize_obj(self, obj: Any, seen_ids: Set[int]) -> Any:
+        """
+        Рекурсивная сериализация объекта с обработкой циклических ссылок.
+        Возвращает либо полную структуру объекта, либо ссылку ($ref) при повторном обнаружении.
+        """
+        obj_id = id(obj)  # Получаем уникальный идентификатор объекта в памяти
+
+        # Если объект уже был сериализован — возвращаем ссылку на него
+        if obj_id in self._obj_to_id:
+            return {"$ref": self._obj_to_id[obj_id]}
+
+        # Регистрируем новый объект: присваиваем ID и сохраняем соответствие
+        ref_id = self._get_next_id()
+        self._obj_to_id[obj_id] = ref_id
+        self._id_to_obj[ref_id] = obj
+
+        # Обработка примитивных типов (не требуют специальной сериализации)
+        if isinstance(obj, (str, int, float, bool, type(None))):
+            return obj
+
+        # Обработка кастомных типов с помощью зарегистрированных сериализаторов
+        for cls, serializer in self.type_serializers.items():
+            if isinstance(obj, cls):
+                return serializer.serialize(obj)
+
+        # Обработка списков — рекурсивно сериализуем каждый элемент
+        if isinstance(obj, list):
+            result = []
+            for item in obj:
+                result.append(self._serialize_obj(item, seen_ids))
+            return result
+
+        # Обработка словарей — рекурсивно сериализуем ключи и значения
+        if isinstance(obj, dict):
+            result = {}
+            for key, value in obj.items():
+                result[key] = self._serialize_obj(value, seen_ids)
+            return result
+
+        # Обработка dataclass-объектов — сохраняем все поля с их значениями
+        if is_dataclass(obj):
+            result = {"$id": ref_id}  # Добавляем ID объекта для ссылок
+            for field in fields(obj):  # Перебираем все поля dataclass
+                value = getattr(obj, field.name)
+                if value is not None:  # Не сохраняем None-значения
+                    # Рекурсивно сериализуем значение поля
+                    result[field.name] = self._serialize_obj(value, seen_ids)
+            return result
+
+        # Для сложных объектов, не покрытых выше, используем pickle (с оговорками безопасности)
+        return {"$pickle": pickle.dumps(obj).hex()}
+
+    def serialize(self, obj: Any, format: str = 'json') -> str:
+        """
+        Сериализация объекта в указанный формат.
+        Поддерживает: JSON (с циклическими ссылками), CSV (только плоские объекты), бинарный (pickle).
+        """
+        # Сброс состояния для новой сериализации — чтобы не смешивать ID разных графов
+        self._current_id = 0
+        self._id_to_obj.clear()
+        self._obj_to_id.clear()
+
+        if format == 'json':
+            serialized = self._serialize_obj(obj, set())
+            return json.dumps(serialized, ensure_ascii=False, indent=2)
+
+        elif format == 'csv':
+            # CSV только для плоских объектов (без вложенных структур)
+            if is_dataclass(obj) and not any(
+                isinstance(getattr(obj, f.name), (list, dict, type(None)))
+                for f in fields(obj) if hasattr(obj, f.name)
+            ):
+                fieldnames = [f.name for f in fields(obj)]
+                output = []
+                # Создаём CSV-строку с заголовками и данными объекта
+                writer = csv.DictWriter(output, fieldnames=fieldnames)
+                writer.writeheader()
+                row = {f.name: getattr(obj, f.name) for f in fields(obj)}
+                writer.writerow(row)
+                return '\n'.join(output)
+            else:
+                raise ValueError("CSV формат поддерживает только плоские объекты без вложенных структур")
+
+        elif format == 'binary':
+            # Бинарная сериализация через pickle (осторожно: небезопасно для недоверенных данных!)
+            return pickle.dumps(obj)
+        else:
+            raise ValueError(f"Неподдерживаемый формат: {format}")
+
+    def deserialize(self, data: str, cls: type) -> Any:
+        """
+        Десериализация данных обратно в объект заданного класса.
+        Восстанавливает цикли
+            def deserialize(self, data: str, cls: type) -> Any:
+        """
+        Десериализация данных обратно в объект заданного класса.
+        Восстанавливает циклические ссылки и полный граф объектов.
+        """
+        # Парсим входные данные в зависимости от формата
+        if isinstance(data, str) and data.startswith('{'):
+            parsed = json.loads(data)
+        elif isinstance(data, bytes):
+            # Для бинарного формата сразу возвращаем результат десериализации pickle
+            return pickle.loads(data)
+        else:
+            raise ValueError("Неподдерживаемый формат данных для десериализации")
+
+        # Очищаем словарь созданных объектов для новой десериализации
+        self._id_to_obj.clear()
+
+        def _deserialize_obj(obj_data: Any) -> Any:
+            """Рекурсивная десериализация объекта из данных"""
+            # Если это ссылка ($ref), возвращаем уже созданный объект
+            if isinstance(obj_data, dict) and '$ref' in obj_data:
+                ref_id = obj_data['$ref']
+                if ref_id not in self._id_to_obj:
+                    raise ValueError(f"Ссылка на несуществующий объект с ID {ref_id}")
+                return self._id_to_obj[ref_id]
+
+            # Если это объект с ID, создаём его и сохраняем в словаре
+            if isinstance(obj_data, dict) and '$id' in obj_data:
+                obj_id = obj_data['$id']
+                # Создаём экземпляр класса (предполагаем, что это dataclass)
+                obj = cls.__new__(cls)
+                self._id_to_obj[obj_id] = obj
+
+                # Заполняем поля объекта
+                for key, value in obj_data.items():
+                    if key not in ('$id', '$ref'):
+                        # Рекурсивно десериализуем значение
+                        setattr(obj, key, _deserialize_obj(value))
+                return obj
+
+            # Обработка примитивных типов
+            if isinstance(obj_data, (str, int, float, bool, type(None))):
+                return obj_data
+
+            # Обработка списков
+            if isinstance(obj_data, list):
+                result = []
+                for item in obj_data:
+                    result.append(_deserialize_obj(item))
+                return result
+
+            # Обработка словарей
+            if isinstance(obj_data, dict):
+                result = {}
+                for key, value in obj_data.items():
+                    result[key] = _deserialize_obj(value)
+                return result
+
+            # Обработка кастомных типов (date, datetime и т. д.)
+            for target_type, serializer in self.type_serializers.items():
+                # Здесь нужна дополнительная логика для распознавания типов по данным
+                # В упрощённой версии просто возвращаем данные
+                pass
+
+            # Для остальных случаев — используем pickle (если данные в таком формате)
+            if isinstance(obj_data, dict) and '$pickle' in obj_data:
+                pickle_data = bytes.fromhex(obj_data['$pickle'])
+                return pickle.loads(pickle_data)
+
+            # По умолчанию возвращаем данные как есть
+            return obj_data
+
+        return _deserialize_obj(parsed)
+
+
+# Пример использования с выводом ожидаемого результата
+if __name__ == '__main__':
+    # Создаём объекты с циклической ссылкой
+    alice = Employee(id=1, name='Алиса')
+    bob = Employee(id=2, name='Боб', manager=alice)
+    alice.subordinates.append(bob)  # Цикл: alice → bob → alice
+
+    # Инициализируем сериализатор
+    serializer = ObjectSerializer()
+
+    # Сериализуем в JSON
+    json_str = serializer.serialize(alice, 'json')
+    print("=== СЕРИАЛИЗОВАННЫЕ ДАННЫЕ (JSON) ===")
+    print(json_str)
+
+    # Десериализуем обратно
+    alice2 = serializer.deserialize(json_str, Employee)
+
+    print("\n=== ПРОВЕРКА ВОССТАНОВЛЕННОЙ СТРУКТУРЫ ===")
+    print(f"alice2.name: {alice2.name}")
+    print(f"alice2.subordinates[0].name: {alice2.subordinates[0].name}")
+    print(f"alice2.subordinates[0].manager.name: {alice2.subordinates[0].manager.name}")
+
+    # Проверяем, что циклическая ссылка восстановлена корректно
+    print("\n=== ПРОВЕРКА ЦИКЛИЧЕСКОЙ ССЫЛКИ ===")
+    is_same = alice2.subordinates[0].manager is alice2
+    print(f"alice2.subordinates[0].manager is alice2: {is_same}")
+    # Должно вывести: True
+
+    # Дополнительно проверим ID объектов
+    print("\n=== ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА ===")
+    print(f"ID alice2: {id(alice2)}")
+    print(f"ID менеджера Боба: {id(alice2.subordinates[0].manager)}")
+    print(f"Объекты идентичны: {id(alice2) == id(alice2.subordinates[0].manager)}")
