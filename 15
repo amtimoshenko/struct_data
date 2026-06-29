@@ -1,0 +1,39 @@
+#include <iostream>
+#include <iomanip>
+
+double calculate_arpa(double total_revenue, int active_accounts) {
+    if (active_accounts <= 0) {
+        std::cerr << "Ошибка: количество аккаунтов должно быть > 0" << std::endl;
+        return 0.0;
+    }
+    return total_revenue / active_accounts;
+}
+
+double target_revenue(double target_arpa, int accounts) {
+    if (accounts <= 0) {
+        std::cerr << "Ошибка: количество аккаунтов должно быть > 0" << std::endl;
+        return 0.0;
+    }
+    return target_arpa * accounts;
+}
+
+// Демонстрация работы
+int main() {
+    // Тест 1: расчёт ARPA
+    double current_arpa = calculate_arpa(9000000, 300);
+    std::cout << std::fixed << std::setprecision(2);
+    std::cout << "calculate_arpa(9000000, 300) → " << current_arpa << " руб." << std::endl;
+    
+    // Тест 2: целевая выручка
+    double needed_revenue = target_revenue(35000, 300);
+    std::cout << "target_revenue(35000, 300) → Нужна выручка: " 
+              << needed_revenue << " руб." << std::endl;
+    
+    // Дополнительно: проверка прироста
+    double growth = needed_revenue - 9000000;
+    double growth_percent = (growth / 9000000) * 100;
+    std::cout << "Прирост выручки: +" << growth << " руб. (" 
+              << std::fixed << std::setprecision(1) << growth_percent << "%)" << std::endl;
+    
+    return 0;
+}
